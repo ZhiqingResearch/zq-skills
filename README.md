@@ -5,23 +5,31 @@ Works with Claude Code, Cursor, Codex, OpenCode, and 70+ other agents.
 
 ## Install
 
-Install every skill in this repo:
+The `npx skills` CLI auto-detects which coding agents you have installed and
+installs into them; add `--agent <name>` to target one explicitly.
 
 ```bash
-npx skills add ZhiqingResearch/zq-skills
-```
-
-List what's available without installing:
-
-```bash
+# List available skills without installing
 npx skills add ZhiqingResearch/zq-skills --list
+
+# Install every skill in this repo
+npx skills add ZhiqingResearch/zq-skills
+
+# Install a single skill by its frontmatter `name`
+npx skills add ZhiqingResearch/zq-skills --skill zq-commit
+
+# Install a single skill into a specific agent
+npx skills add ZhiqingResearch/zq-skills --skill zq-commit --agent claude-code
 ```
 
-Install into a specific agent (the CLI auto-detects installed agents, but you can force one):
+Notes:
 
-```bash
-npx skills add ZhiqingResearch/zq-skills --agent claude-code
-```
+- `--skill` matches the `name` in a skill's frontmatter, not its folder name.
+  Quote names containing spaces: `--skill "My Skill"`.
+- Omitting `--skill` installs all skills in the repo.
+- Common `--agent` values: `claude-code`, `cursor`, `codex`, `github-copilot`,
+  `gemini-cli`, `windsurf`, `zed`, `continue`, `cline`, `opencode`, `universal`
+  — [73 agents supported in total](https://github.com/vercel-labs/skills).
 
 ## Skills
 
