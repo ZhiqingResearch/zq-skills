@@ -3,3 +3,9 @@ node_modules/
 *.log
 .env
 .env.*
+
+# zq-amazon-listing-fill run artifacts
+fields.json
+keepa.json
+values.json
+*.filled.xlsm
