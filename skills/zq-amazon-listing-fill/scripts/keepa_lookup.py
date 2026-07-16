@@ -5,10 +5,11 @@ Keepa is the only one of our sources that accepts a UPC directly; it returns the
 matching ASIN plus catalog attributes. Use it as the primary spec source AND as
 the UPC -> ASIN bridge.
 
-API key resolution (first hit wins):
+API key resolution (handled by credentials.resolve_secret, first hit wins):
   1. env var KEEPA_API_KEY
-  2. KEEPA_API_KEY=... line in a .env file in the current directory
-  3. error (never hardcode keys — this repo is public)
+  2. KEEPA_API_KEY=... in ./.env
+  3. ~/.config/zq-skills/credentials.json  (set once via config.py — recommended)
+Never hardcode keys — this repo is public.
 
 Usage:
   python3 keepa_lookup.py UPC [UPC ...] [--domain 1] [--out keepa.json]
@@ -18,25 +19,20 @@ Outputs a JSON list; each entry is {upc, found, asin, ...normalized fields..., r
 """
 import argparse
 import json
-import os
 import sys
 import urllib.parse
 import urllib.request
 
+from credentials import resolve_secret
+
 
 def resolve_key():
-    key = os.environ.get("KEEPA_API_KEY")
+    key = resolve_secret("KEEPA_API_KEY")
     if key:
-        return key.strip()
-    try:
-        with open(".env", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if line.startswith("KEEPA_API_KEY="):
-                    return line.split("=", 1)[1].strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    sys.exit("KEEPA_API_KEY not set. `export KEEPA_API_KEY=...` or add it to ./.env")
+        return key
+    sys.exit("KEEPA_API_KEY not configured. Run: "
+             "python3 config.py set KEEPA_API_KEY <your-key>  "
+             "(or set the env var / add it to ./.env)")
 
 
 def call_keepa(key, upc, domain):

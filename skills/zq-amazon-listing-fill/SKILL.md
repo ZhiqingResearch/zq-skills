@@ -18,10 +18,27 @@ inferred are highlighted so the user can review them.
 - An Amazon template file (`.xlsm`/`.xlsx`) — standard multi-sheet flat file.
 - One or more **UPC** codes (12-digit).
 
-## Prerequisites
+## Prerequisites — API key (one-time, no env setup needed)
 
-- `KEEPA_API_KEY` available via env var, or a `KEEPA_API_KEY=...` line in a `.env`
-  in the working directory. Never commit the key.
+The skill needs a Keepa API key. **Do not make the user configure environment
+variables.** On the first run, resolve the key like this:
+
+```bash
+python3 scripts/config.py check      # is KEEPA_API_KEY already available?
+```
+
+- If it reports `OK`, proceed — a key is already saved (env, `.env`, or the
+  user-level config from a previous run).
+- If it reports `missing`, ask the user in chat to paste their Keepa key once,
+  then save it for them:
+
+  ```bash
+  python3 scripts/config.py set KEEPA_API_KEY <pasted-key>
+  ```
+
+  It is stored at `~/.config/zq-skills/credentials.json` (perms 0600, outside this
+  repo, never committed) and reused automatically on every future run — the user
+  never has to configure it again.
 
 ## Workflow
 
