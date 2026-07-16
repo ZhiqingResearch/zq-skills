@@ -3,26 +3,24 @@
 A collection of [Agent Skills](https://github.com/vercel-labs/skills) installable with `npx skills`.
 Works with Claude Code, Cursor, Codex, OpenCode, and 70+ other agents.
 
-> Replace `your-org` below with your GitHub org/username once this repo is pushed.
-
 ## Install
 
 Install every skill in this repo:
 
 ```bash
-npx skills add your-org/zq-skills
+npx skills add ZhiqingResearch/zq-skills
 ```
 
 List what's available without installing:
 
 ```bash
-npx skills add your-org/zq-skills --list
+npx skills add ZhiqingResearch/zq-skills --list
 ```
 
 Install into a specific agent (the CLI auto-detects installed agents, but you can force one):
 
 ```bash
-npx skills add your-org/zq-skills --agent claude-code
+npx skills add ZhiqingResearch/zq-skills --agent claude-code
 ```
 
 ## Skills
