@@ -67,6 +67,14 @@ Do these first; they are unambiguous and unblock trust in the rest.
 
 ## Phase 1 — Reliability core (the five criticals) — items 1, 2, 3, 4, 5/6
 
+**Status: DONE.** Shipped `field_policy.{py,json}` (compliance no-infer + seller
+separation), `resolve_valid_values.py` (287/288 enum columns resolved on the sample
+template; unresolved flagged `enum_unresolved`), `validate_output.py` (policy-aware
+required checks, GTIN check digit, enum re-check, value/unit pairing, residual-
+example scan, structure preservation, re-open), writer v2 (evidence schema +
+identity gate + enum hard-fail + policy enforcement), and `parse_template`
+data-region reporting. All verified end-to-end against `NOTEBOOK_COMPUTER.xlsm`.
+
 These decide whether the file is trustworthy and upload-safe.
 
 ### 1.1 Field policy: forbid inference on compliance/safety fields — items 1, 7

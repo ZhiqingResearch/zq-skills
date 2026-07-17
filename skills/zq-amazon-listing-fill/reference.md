@@ -36,8 +36,8 @@ Conditionally Required** fields.
 | Product Id Type | `UPC` (constant) |
 | Product Description | Keepa/web; follow length + HTML rules |
 | Bullet Point | Keepa `bullet_points` / web |
-| Country of Origin | web search (enumerated valid value) |
-| Dangerous Goods Regulations | usually a valid-value default; check the rule |
+| Country of Origin | **compliance — never inferred**; user-confirmed source only |
+| Dangerous Goods Regulations | **compliance — never inferred**; `needs_user_input` if unconfirmed |
 
 Conditionally-Required spec fields (screen size, RAM, CPU, storage, weight, …)
 are filled when Keepa/web provide them.

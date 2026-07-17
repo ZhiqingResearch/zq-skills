@@ -42,20 +42,27 @@ python3 scripts/config.py check      # is KEEPA_API_KEY already available?
 
 ## Workflow
 
-Run the scripts in `scripts/` (they need only Python 3 + `openpyxl`).
+Run the scripts in `scripts/` (they need only Python 3 + `openpyxl`). The pipeline
+enforces safety: compliance fields are never guessed, dropdown values are validated
+against the template's real allowed values, and the output is checked before you
+hand it over.
 
-### 1. Read the template's fields and rules
+### 1. Read fields, policy, and real dropdown values
 
 ```bash
 python3 scripts/parse_template.py <template> --required-only --out fields.json
+python3 scripts/field_policy.py fields.json --out fields_policy.json
+python3 scripts/resolve_valid_values.py <template> --out valid_values.json
 ```
 
-`fields.json` lists every Required / Conditionally Required field with its
-**`accepted_values`** (the filling rule), `label`, `group`, and 1-based `column`.
-It also reports the template's **`product_type`** (e.g. `NOTEBOOK_COMPUTER`) — use
-that as the value for the `Product Type` field. The script auto-detects the sheet
-layout (label/attribute/data rows) from the template — it works for any Amazon
-category, not just this one.
+- `fields_policy.json` = every Required/Conditionally-Required field with its
+  `accepted_values` rule, 1-based `column`, the template `product_type`, **and a
+  `policy` class** (`compliance` / `seller_owned` / `product_attribute`).
+- `valid_values.json` = the **actual allowed values** for each dropdown column
+  (resolved from the template's data validations, not the prose rule). Choose enum
+  values from here; anything marked `resolved: false` is `enum_unresolved`.
+- `parse_template` also reports the **data region** — how many existing values sit
+  in the sheet and whether they look like the built-in example vs real user data.
 
 ### 2. Look up product data (Keepa), with an ASIN fallback
 
@@ -63,75 +70,114 @@ category, not just this one.
 python3 scripts/keepa_lookup.py <UPC> [<UPC> ...] --domain 1 --out keepa.json
 ```
 
-`keepa.json` gives, per query: `found`, `asin`, `brand`, `title`, `model`,
-`category_tree`, dimensions/weight, `images`, `bullet_points`, etc.
-`--domain 1` = US marketplace.
+Per query: `found`, `asin`, `brand`, `title`, `model`, `category_tree`,
+dimensions/weight, `images`, `bullet_points`, etc. `--domain 1` = US.
 
-**For any UPC where `found: false`, do the fallback before giving up:**
-
-1. **Web-search the UPC** to find the product's Amazon **ASIN** (search the UPC,
-   brand+model, or the product name; confirm the ASIN belongs to the same item).
-2. If you find an ASIN, **re-query Keepa by ASIN** to recover structured data:
-   ```bash
-   python3 scripts/keepa_lookup.py <ASIN> [<ASIN> ...] --asin --domain 1 --out keepa_asin.json
-   ```
-3. If still nothing (no ASIN, or Keepa has no data for it), **fill from web-search
-   information alone** — and mark those values `inferred: true` where they aren't
-   firmly confirmed.
-
-Never fabricate an ASIN or UPC. Note in the report which UPCs needed the fallback.
-
-### 3. Resolve each field (your judgment goes here)
-
-For every UPC and every field in `fields.json`, decide the value:
-
-1. **Follow the field's `accepted_values` rule** — it dictates the allowed format,
-   units, and valid values. Match it exactly (e.g. enumerated valid values,
-   number+unit format). The source you pick per field is whatever the rule fits.
-2. Prefer confirmed data: **Keepa first**, then **web search** to fill gaps or
-   verify (search by UPC, ASIN, brand+model). Cross-check when they disagree.
-3. **Scope:**
-   - `Required` fields → always fill. If no data is found, infer a reasonable
-     value and mark it `inferred: true`.
-   - `Conditionally Required` → fill when you have data; otherwise leave blank
-     (do **not** fabricate).
-   - Everything else → leave blank.
-4. Never invent an ASIN or a UPC. If Keepa returns `found: false`, note it and
-   rely on web search; flag the row in the report.
-
-### 4. Write values back
-
-Build `values.json` (shape documented in `scripts/write_values.py`) mapping each
-UPC row to `{attribute: {value, inferred, source}}`, then:
+**For any UPC where `found: false`:** web-search the UPC to find its Amazon **ASIN**
+(confirm it's the same item), then re-query Keepa by ASIN:
 
 ```bash
-python3 scripts/write_values.py values.json
+python3 scripts/keepa_lookup.py <ASIN> [<ASIN> ...] --asin --domain 1 --out keepa_asin.json
 ```
 
-This writes into the `Template` sheet from its data row down, **highlights every
-inferred cell** with a background color, and saves a new `*.filled.xlsm` (the
-original is untouched). By default it also **clears the template's built-in
-example/sample data** (the `ABC123`/`Sony…` example row and any leftover sample
-values) so it can't be mistaken for real data — header rows and all other sheets
-and dropdown validations are preserved. Pass `--keep-examples` to leave the
-sample data in place.
+If still nothing, fill from web-search info alone. Never fabricate an ASIN/UPC.
 
-### 5. Report back to the user
+### 3. Establish product identity (confidence gate)
 
-Give the user the filled file path plus a short report: per UPC, which fields were
-filled, which were **inferred (highlighted)**, and any UPC that Keepa couldn't
-match. State that highlighted cells are inferred and worth reviewing.
+Before trusting any data for a UPC, confirm you have the **right product**. Set
+`identity_confidence` per UPC:
+
+- `high` — the full UPC appears verbatim on a source page, **and** brand + model +
+  MPN agree across ≥2 sources, with no config mixing (RAM/SSD/color consistent).
+- `medium` — mostly consistent but one leg is weak.
+- `low` — can't confirm the item. **The writer will refuse a `low` row** — pause
+  and ask the user rather than fill the wrong product.
+
+### 4. Resolve each field (your judgment, gated by policy)
+
+For every field in `fields_policy.json`, branch on `policy`:
+
+- **`product_attribute`** — fill from Keepa/web following `accepted_values`. For
+  dropdown columns, pick a value from `valid_values.json`. If no data is found for a
+  `Required` field, you may infer — set `inferred: true` (it will be highlighted).
+- **`compliance`** (country of origin, battery, dangerous goods, FCC, Prop 65, …) —
+  **never infer.** Only fill with a firm source (`inferred: false` + a `source_url`
+  or `evidence`). Otherwise set `status: "needs_user_input"` and leave it for the
+  user. The writer enforces this.
+- **`seller_owned`** (SKU, price, condition, fulfillment, shipping template,
+  warranty) — do **not** web-fill. If the user supplied them (intake), write with
+  `source: "user"`; otherwise leave blank. The writer rejects web-sourced values here.
+
+Record evidence per field so the report is auditable (see the v2 schema below).
+
+### 5. Write values back (enforced)
+
+Build `values.json` (v2 schema — see `scripts/write_values.py`) and run with enum
+enforcement:
+
+```bash
+python3 scripts/write_values.py values.json --valid-values valid_values.json
+```
+
+The writer: enforces the policy gates above; **hard-fails (no file written) on any
+illegal dropdown value**; auto-corrects enum casing; skips `low`-identity rows
+(unless `--force`); highlights inferred cells; clears the template's example data
+(unless `--keep-examples`); preserves macros, sheets, and dropdown validation; and
+keeps the original extension (`.xlsx`→`.xlsx`, `.xlsm`→`.xlsm`).
+
+v2 `values.json` (per field: value + evidence + status):
+
+```json
+{
+  "template": "<template path>",
+  "rows": [
+    {
+      "upc": "889842188837",
+      "identity_confidence": "high",
+      "identity_evidence": ["UPC exact match on brand site", "MPN matches Keepa"],
+      "values": {
+        "<attribute>": {
+          "value": "16", "source": "keepa", "source_url": "https://…",
+          "evidence": "16GB DDR5 RAM", "confidence": "high",
+          "inferred": false, "status": "filled"
+        }
+      }
+    }
+  ]
+}
+```
+
+### 6. Validate the output
+
+```bash
+python3 scripts/validate_output.py <template>.filled.xlsm --template <template> \
+    --fields fields.json --valid-values valid_values.json --json validation_report.json
+```
+
+Exits non-zero on hard errors (illegal enum, lost dropdowns/macros/sheets, file
+won't open). Fix and re-run before handing the file over.
+
+### 7. Report back to the user
+
+Give the file path + a report: which fields were filled, which were **inferred
+(highlighted)**, which need user input (`compliance` / `seller_owned` blanks), any
+UPC that needed the ASIN fallback, and the `validate_output` verdict. **If seller
+fields weren't provided, label the file "product attributes filled — NOT
+upload-ready"** rather than implying it can be uploaded as-is.
 
 ## Rules
 
-- Follow each field's `accepted_values` exactly — wrong enum/format/units get the
-  listing rejected on upload.
-- Only touch Required (always) and Conditionally Required (when data exists) fields.
-- Inferred = highlighted. Never silently guess a Required field without the mark.
-- Keys are resolved by `credentials.resolve_secret`: env var → `./.env` →
-  `~/.config/zq-skills/credentials.json` (see the Prerequisites section). Never
-  hardcode a key in the repo or commit one.
+- **Compliance fields are never guessed.** No firm source → `needs_user_input`.
+- **Seller fields never come from the web** — only user intake, else blank.
+- **Enum values must be legal** (from `valid_values.json`); the writer/validator
+  hard-fail otherwise.
+- **Confirm identity first**; a `low`-confidence product is not written.
+- Inferred = highlighted; never silently guess a Required field without the mark.
+- Follow each field's `accepted_values` exactly (format, units, valid values).
+- Keys resolve via env → `./.env` → `~/.config/zq-skills/credentials.json`; never
+  hardcode or commit a key.
 - Output a new file; never overwrite the user's original template.
 
 See [reference.md](reference.md) for template mechanics, the Keepa→field mapping,
-source priority, and how SIF will slot in later.
+and how SIF will slot in later. See [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md) for
+the roadmap (Phase 2: Keepa hardening, config safety, batch row fidelity).

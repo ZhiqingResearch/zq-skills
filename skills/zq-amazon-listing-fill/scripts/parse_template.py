@@ -106,6 +106,45 @@ def _s(row, idx):
     return "" if v is None else str(v).strip()
 
 
+_EXAMPLE_MARKERS = {"abc123", "accessory"}
+
+
+def scan_data_region(ws, attrs, defs, settings):
+    """Report what already sits in the data region and classify example vs user data.
+
+    Example = matches the field's Data Definitions Example value, or a known marker
+    (SKU 'ABC123', the "✅ we've pre-filled" note). Anything else is flagged
+    'user_data' so the writer never silently wipes a seller's in-progress row.
+    """
+    start = settings["attribute_row"] + 1
+    example_cells, userdata, sample = 0, 0, []
+    for row in ws.iter_rows(min_row=start, max_row=ws.max_row):
+        for cell in row:
+            v = cell.value
+            if v in (None, ""):
+                continue
+            idx = cell.column - 1
+            attr = str(attrs[idx]).strip() if idx < len(attrs) and attrs[idx] else None
+            example = (defs.get(attr, {}) or {}).get("example", "") if attr else ""
+            sv = str(v).strip()
+            is_example = (
+                sv.lower() in _EXAMPLE_MARKERS
+                or sv.startswith("✅")
+                or (example and sv.lower() == str(example).strip().lower())
+            )
+            if is_example:
+                example_cells += 1
+            else:
+                userdata += 1
+            if len(sample) < 12:
+                sample.append({"row": cell.row, "column": cell.column,
+                               "attribute": attr, "value": sv[:40],
+                               "kind": "example" if is_example else "user_data"})
+    return {"existing_cells": example_cells + userdata,
+            "example_cells": example_cells, "user_data_cells": userdata,
+            "sample": sample}
+
+
 def build_manifest(path):
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     ws = wb["Template"]
@@ -113,6 +152,7 @@ def build_manifest(path):
     attrs = row_values(ws, settings["attribute_row"])
     labels = row_values(ws, settings["label_row"])
     defs = load_definitions(wb)
+    data_region = scan_data_region(ws, attrs, defs, settings)
 
     fields = []
     for idx, attr in enumerate(attrs):
@@ -130,7 +170,7 @@ def build_manifest(path):
             "example": d.get("example", ""),
         })
     return {"template": path, **settings, "sheet": "Template",
-            "field_count": len(fields), "fields": fields}
+            "field_count": len(fields), "data_region": data_region, "fields": fields}
 
 
 def main():
@@ -157,6 +197,12 @@ def main():
     print(f"Layout: label_row={manifest['label_row']} "
           f"attribute_row={manifest['attribute_row']} data_row={manifest['data_row']}")
     print(f"Fields written: {len(manifest['fields'])}  ->  {args.out}")
+    dr = manifest["data_region"]
+    print(f"Data region: {dr['existing_cells']} existing cell(s) "
+          f"(example={dr['example_cells']}, user_data={dr['user_data_cells']})")
+    if dr["user_data_cells"]:
+        print("  NOTE: some existing values look like real data, not the built-in "
+              "example — review before clearing.")
     print("Required-level distribution:", dict(dist))
     req = [f for f in manifest["fields"] if f["required"] == "Required"]
     print(f"\nStrictly Required ({len(req)}):")

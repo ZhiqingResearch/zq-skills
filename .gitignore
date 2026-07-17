@@ -6,7 +6,14 @@ node_modules/
 
 # zq-amazon-listing-fill run artifacts
 fields.json
+fields_policy.json
+valid_values.json
+validation_report.json
 keepa.json
 keepa_asin.json
 values.json
 *.filled.xlsm
+*.filled.xlsx
+
+__pycache__/
+*.pyc
