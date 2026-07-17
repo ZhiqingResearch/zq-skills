@@ -49,9 +49,13 @@ hand it over.
 
 ```bash
 python3 scripts/parse_template.py <template> --required-only --out fields.json
-python3 scripts/field_policy.py fields.json --out fields_policy.json
+python3 scripts/field_policy.py <template> --required-only --out fields_policy.json
 python3 scripts/resolve_valid_values.py <template> --out valid_values.json
 ```
+
+These three read **only the template** and have no dependency on each other's
+output — run them in any order (or in parallel). (`field_policy.py` also still
+accepts a `fields.json` if you prefer to reuse the parsed manifest.)
 
 - `fields_policy.json` = every Required/Conditionally-Required field with its
   `accepted_values` rule, 1-based `column`, the template `product_type`, **and a

@@ -51,12 +51,24 @@ def classify(attribute):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("fields", help="fields.json from parse_template.py")
+    ap.add_argument("input", help="a template .xlsx/.xlsm (parsed here) OR a fields.json")
     ap.add_argument("--out", default="fields_policy.json")
+    ap.add_argument("--required-only", action="store_true",
+                    help="keep only Required / Conditionally Required (when given a template)")
     args = ap.parse_args()
 
-    with open(args.fields, encoding="utf-8") as fh:
-        manifest = json.load(fh)
+    # Accept a template directly so this step has NO dependency on parse_template
+    # having already written fields.json — the three prep scripts then read only the
+    # template and are safe to run in any order or in parallel.
+    if args.input.lower().endswith((".xlsx", ".xlsm")):
+        from parse_template import build_manifest
+        manifest = build_manifest(args.input)
+        if args.required_only:
+            keep = {"Required", "Conditionally Required"}
+            manifest["fields"] = [f for f in manifest["fields"] if f["required"] in keep]
+    else:
+        with open(args.input, encoding="utf-8") as fh:
+            manifest = json.load(fh)
     counts = {"compliance": 0, "seller_owned": 0, "product_attribute": 0}
     for f in manifest.get("fields", []):
         f["policy"] = classify(f["attribute"])
