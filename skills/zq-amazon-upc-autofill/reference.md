@@ -90,6 +90,27 @@ step 2). Keepa entry points: exact by UPC (`code`), by ASIN (`--asin`), and keyw
 search (`--search "<brand model>"`, higher token cost) — the last returns candidate
 products with their `upc_list` so you can verify the match.
 
+## How field rules are validated
+
+The template describes fields in two forms; each is enforced differently:
+
+- **Dropdown / enum values** — the machine-enforceable form, in the sheet's data
+  validations. `resolve_valid_values.py` resolves them (named range / INDIRECT /
+  Dropdown Lists); `write_values.py` **hard-fails** on an illegal value and
+  `validate_output.py` re-checks. This is the constraint that actually gets a
+  listing rejected, and it is enforced authoritatively.
+- **`accepted_values` prose** (Data Definitions) — mostly descriptive guidance the
+  agent follows. Where it states a machine-readable constraint (e.g. "maximum 200
+  characters", "value between 1 and 10", "numeric"), `field_rules.py` parses and
+  **enforces it as an ERROR**. Otherwise `field_rules.json` supplies common Amazon
+  length/numeric limits (title 200, bullet 500, description 2000, …) checked as
+  **WARN** (heuristic, editable per category/marketplace).
+
+Not derived (would be unreliable): the `Conditions List` sheet encodes conditional
+requirements as value-combination lists referenced by INDIRECT formulas, not a
+clean "field X required when Y" table — so conditional-requirement *triggers* are
+not auto-evaluated; fields are bucketed by their stated Required level only.
+
 ## Inferred values
 
 A value is **inferred** when it isn't confirmed by any source (an educated guess

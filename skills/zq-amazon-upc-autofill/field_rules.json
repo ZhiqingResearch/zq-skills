@@ -1,0 +1,36 @@
+{
+  "_comment": "Field value rules for zq-amazon-upc-autofill, checked by validate_output.py via field_rules.py. `max_length` keys are matched (substring, case-insensitive) against a field's BASE attribute name (before the first '[' or '#'); the first match wins. These are common Amazon US limits and are HEURISTIC defaults — violations are reported as WARN. A limit parsed from the template's own `accepted_values` text overrides these and is reported as ERROR (authoritative for that template). Edit freely per category/marketplace.",
+
+  "max_length": {
+    "item_name": 200,
+    "bullet_point": 500,
+    "product_description": 2000,
+    "generic_keyword": 250,
+    "search_terms": 250,
+    "brand": 50,
+    "manufacturer": 100,
+    "model_name": 200,
+    "model_number": 40,
+    "part_number": 40,
+    "color": 50,
+    "style": 50
+  },
+
+  "numeric_base_names": [
+    "quantity",
+    "number_of_items",
+    "processor_count",
+    "number_of_lithium",
+    "wattage",
+    "voltage",
+    "ram_memory",
+    "hard_disk",
+    "memory_storage_capacity",
+    "computer_memory",
+    "screen_size",
+    "display_size",
+    "item_weight",
+    "package_weight",
+    "resolution"
+  ]
+}

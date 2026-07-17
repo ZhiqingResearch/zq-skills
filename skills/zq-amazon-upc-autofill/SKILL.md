@@ -187,8 +187,14 @@ python3 scripts/validate_output.py <template>.filled.xlsm --template <template> 
     --fields fields.json --valid-values valid_values.json --json validation_report.json
 ```
 
-Exits non-zero on hard errors (illegal enum, lost dropdowns/macros/sheets, file
-won't open). Fix and re-run before handing the file over.
+Checks: required-field presence (policy-aware), enum legality, UPC/GTIN check
+digit, value/unit pairing, residual example data, structure preservation, and
+**value-level rules** (length / numeric / range — from each field's
+`accepted_values` when it states one, else common Amazon limits in
+`field_rules.json`). Exits non-zero on hard errors (illegal enum, a limit the
+template itself states being exceeded, lost dropdowns/macros/sheets, file won't
+open); length/numeric issues from the heuristic defaults are warnings. Fix and
+re-run before handing the file over.
 
 ### 7. Report back to the user
 

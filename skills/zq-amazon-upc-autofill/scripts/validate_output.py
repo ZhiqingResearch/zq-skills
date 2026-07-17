@@ -22,6 +22,7 @@ import zipfile
 
 import openpyxl
 
+import field_rules
 from field_policy import classify
 from parse_template import load_definitions, load_settings
 
@@ -124,6 +125,15 @@ def main():
                         f"compliance/seller field(s) need user input before upload")
         else:
             add("INFO", "UPLOAD READINESS: all required fields present")
+
+        # Value-level rules (length / numeric / range) from field_rules.py — driven
+        # by each field's accepted_values (authoritative -> ERROR) or known Amazon
+        # defaults (heuristic -> WARN).
+        for r in rows:
+            for f in fields:
+                v = ws.cell(row=r, column=f["column"]).value
+                for sev, msg in field_rules.check(f["attribute"], f.get("accepted_values"), v):
+                    add(sev, f"row {r}: '{f['label']}' — {msg}")
 
     # UPC / product-id check digit
     pid_col = next((c for c, a in col_attr.items() if a and "product_id_value" in a), None)
