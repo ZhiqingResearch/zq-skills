@@ -1,51 +1,47 @@
 ---
 name: zq-amazon-upc-autofill
-description: Fill an Amazon flat-file listing template (.xlsm/.xlsx) for one or more UPCs by looking up product data via Keepa and web search, then writing the required fields back into the sheet. Use when the user provides an Amazon listing/category template plus UPC codes and asks to auto-fill the required fields and get the completed file back.
+description: Fill an Amazon flat-file listing template (.xlsm/.xlsx) for bulk operations (listing creation) by gathering product info from a UPC (web/Keepa search) plus operator-supplied fields, applying the organization's field rules, and writing a complete parent/child listing back into the sheet. Use when someone provides an Amazon category template plus UPC(s) and asks to fill it for bulk upload.
 ---
 
 # zq-amazon-upc-autofill
 
-Fill the **required** fields of an Amazon flat-file listing template for a batch of
-UPCs. For each UPC it gathers data from **Keepa and web search in parallel** and
-**synthesizes** the two (cross-checking to confirm identity and resolve conflicts),
-then hands back the completed `.xlsm`. Values that had to be inferred are
-highlighted so the user can review them.
+Fill an Amazon flat-file template for **bulk listing operations** (上架). For each
+UPC it gathers product info (web/Keepa search is **one data source**), asks the
+operator to supply what search can't find, applies the **organization's field
+rules**, and writes a complete listing — including parent/child variants — ready
+for bulk upload.
 
-## Inputs
+> **Authoritative rule source:** `org_rules.json` (transcribed from the ops doc
+> '亚马逊批量上传表格字段规则'). Its fixed defaults and generation rules **override**
+> any web/Keepa value. Keep it in sync with that doc.
 
-- An Amazon template file (`.xlsm`/`.xlsx`) — standard multi-sheet flat file.
-- One or more **UPC** codes (12-digit).
+## The two UPCs (don't confuse them)
 
-## Prerequisites — API key (one-time, no env setup needed)
+- **Input UPC** — provided by the operator, used only as a **search key** to gather
+  product info. It is NOT written into the listing.
+- **Product Id (UPC)** — the listing's barcode, **generated** per org rules (brand
+  prefix + check digit). Brand not in `brand_prefixes.json` → no Product Id +
+  highlight the row.
 
-The skill needs a Keepa API key. **Do not make the user configure environment
-variables.** On the first run, resolve the key like this:
+## Inputs (operator provides)
 
-```bash
-python3 scripts/config.py check      # is KEEPA_API_KEY already available?
-```
+- The category template (`.xlsm`) — matched to the product's **大类** (category).
+- One or more **input UPCs**, plus **brand** and (if known) product details.
+- Whether it's **multi-variant**; if so the **Variation Theme** + each variant's
+  distinguishing attribute + **price**; the **store**; optional overrides for the
+  modifiable defaults (Item Condition, Quantity).
 
-- If it reports `OK`, proceed — a key is already saved (env, `.env`, or the
-  user-level config from a previous run).
-- If it reports `missing`, ask the user in chat to paste their Keepa key once,
-  then save it for them:
+## Prerequisites
 
-  ```bash
-  python3 scripts/config.py set KEEPA_API_KEY <pasted-key>
-  ```
-
-  It is stored at `~/.config/zq-skills/credentials.json` (perms 0600, outside this
-  repo, never committed) and reused automatically on every future run — the user
-  never has to configure it again.
+- Keepa key (optional but recommended) for the UPC search — one-time setup:
+  `python3 scripts/config.py check`; if missing, ask the operator to paste it once
+  and `python3 scripts/config.py set KEEPA_API_KEY <key>` (stored in
+  `~/.config/zq-skills/`, never committed). Web search works without it.
+- Python 3 + `openpyxl`.
 
 ## Workflow
 
-Run the scripts in `scripts/` (they need only Python 3 + `openpyxl`). The pipeline
-enforces safety: compliance fields are never guessed, dropdown values are validated
-against the template's real allowed values, and the output is checked before you
-hand it over.
-
-### 1. Read fields, policy, and real dropdown values
+### 1. Read the template (fields, policy, dropdown values)
 
 ```bash
 python3 scripts/parse_template.py <template> --required-only --out fields.json
@@ -53,175 +49,99 @@ python3 scripts/field_policy.py <template> --required-only --out fields_policy.j
 python3 scripts/resolve_valid_values.py <template> --out valid_values.json
 ```
 
-These three read **only the template** and have no dependency on each other's
-output — run them in any order (or in parallel). (`field_policy.py` also still
-accepts a `fields.json` if you prefer to reuse the parsed manifest.)
+All three read only the template — run in any order / parallel.
 
-- `fields_policy.json` = every Required/Conditionally-Required field with its
-  `accepted_values` rule, 1-based `column`, the template `product_type`, **and a
-  `policy` class** (`compliance` / `seller_owned` / `product_attribute`).
-- `valid_values.json` = the **actual allowed values** for each dropdown column
-  (resolved from the template's data validations, not the prose rule). Choose enum
-  values from here; anything marked `resolved: false` is `enum_unresolved`.
-- `parse_template` also reports the **data region** — how many existing values sit
-  in the sheet and whether they look like the built-in example vs real user data.
-
-### 2. Choose sources (Keepa is paid) and gather
-
-**Keepa spends tokens — it's a paid tool. At the start of each run, ask the user
-which to use:**
-
-> "Use Keepa for this batch (paid, more accurate & structured), or **web search
-> only** (free)?"
-
-**A. Web-search only (user declines Keepa)** — gather every attribute from web
-search alone: retailer pages, the brand's own spec page, datasheets. Keep each
-fact's `source_url` + a short `evidence` snippet. Do **not** call `keepa_lookup.py`.
-
-**B. Keepa enabled** — gather Keepa **and** web search in parallel (two independent
-sources used together, then synthesized in steps 3–4). Keepa entry points:
+### 2. Gather product info from the input UPC (one source)
 
 ```bash
-python3 scripts/keepa_lookup.py <UPC> [<UPC> ...] --domain 1 --out keepa.json          # exact, by UPC
-python3 scripts/keepa_lookup.py <ASIN> [<ASIN> ...] --asin --out keepa_asin.json        # enrich by ASIN
-python3 scripts/keepa_lookup.py "<brand model>" --search --out keepa_search.json        # keyword search
+python3 scripts/keepa_lookup.py <input-UPC> [...] --domain 1 --out keepa.json
 ```
 
-Keepa gives `found`, `asin`, `upc_verified`, `brand`, `title`, `model`,
-`category_tree`, dimensions/weight, `images`, `bullet_points`, etc. If a UPC has no
-direct match (`found:false`/`upc_verified:false`), find the ASIN via web search or
-`--search` (check the candidate's `upc_list` contains the target UPC), then enrich
-with `--asin`. `--search` costs more tokens than an exact lookup. Never fabricate an
-ASIN/UPC.
+In parallel, **web-search the UPC** (and brand + model) for specs, title,
+description, images. Combine both; keep each fact's `source_url` + `evidence`.
+Cross-source agreement raises confidence.
 
-**Supplement loop:** after a **web-only** pass, if the result is unsatisfactory —
-required `product_attribute` fields still blank, or `identity_confidence` not
-`high` — ask the user again:
+### 3. Fill gaps from the operator (per the ops doc)
 
-> "Web search left N required fields unfilled / identity unconfirmed. Use Keepa
-> (spends tokens) to fill the gaps?"
+For any UPC that **search can't resolve** (`found:false`, or missing specs), guide
+the operator to supply the fields the ops doc lists them as owning: category,
+brand, product info (purchase link / manual / notes — **operator notes win
+conflicts**), variant attributes, price, store. Never fabricate specs.
 
-If yes, run `keepa_lookup.py` for just those UPCs/gaps and merge; if no, proceed
-web-only (unfilled Required fields get inferred + highlighted per step 4).
+### 4. Build the operator_input
 
-### 3. Establish product identity (confidence gate)
+Assemble everything you gathered + the operator supplied into an `operator_input`
+JSON (schema documented in `scripts/compose_listing.py`): `category`, `brand`,
+`store`, `multi_variant`, `variation_theme`, `shared` (title / description /
+bullet points [list] / special features [list] / images / specs common to all
+variants), and `variants[]` (each variant's distinguishing attribute + `List
+Price` / `Your Price USD ...` / `Quantity (US)`). Map values to template **labels**
+(e.g. "Item Name", "Hard Disk Size").
 
-Confirm you have the **right product** by cross-checking the two sources. Set
-`identity_confidence` per UPC:
+### 5. Compose the listing (org rules + generation + variants)
 
-- `high` — the full UPC appears verbatim on a source page, **and** brand + model +
-  MPN **agree between Keepa and web** (≥2 independent sources), no config mixing
-  (RAM/SSD/color consistent). `upc_verified:true` from Keepa is a strong signal.
-- `medium` — mostly consistent but one leg is weak or single-sourced.
-- `low` — sources disagree or can't confirm the item. **The writer refuses a `low`
-  row** — pause and ask the user rather than fill the wrong product.
+```bash
+python3 scripts/compose_listing.py operator_input.json --template <template> --out values.json
+```
 
-### 4. Resolve each field by combining both sources (gated by policy)
+This produces the full parent+child rows and applies `org_rules.json`:
 
-For every field in `fields_policy.json`, branch on `policy`:
+- **Fixed org defaults** on every row (Country of Origin = United States, Dangerous
+  Goods = Not Applicable, **all battery fields blank** + Are batteries required =
+  No, Fulfillment = FBM, Free Shipping, Target Region = Global, Modified Product,
+  Number of Items = 1, …) and operator defaults (Item Condition = New, Quantity =
+  10 unless overridden).
+- **SKU** generated (3 groups of 2-4 alphanumerics, unique).
+- **Product Id (UPC)** generated from the brand prefix (valid check digit). Brand
+  not in `brand_prefixes.json` → no Product Id, row highlighted in the output.
+- **Parent/child**: parent has no price/inventory/Product Id; each child gets a
+  unique SKU + generated UPC + price + the varying attribute; all variants share
+  title/description/bullets/images.
 
-- **`product_attribute`** — **synthesize the sources you gathered** (web, plus
-  Keepa if enabled): when two independent sources agree, use the value with
-  `confidence: high`; when they differ, pick the one that fits the field's
-  `accepted_values` and is better-sourced (prefer the brand/manufacturer spec page
-  or a UPC-verified Keepa record), and record both in `evidence`. Use one source to
-  fill what the other lacks. For dropdown columns, pick a value from
-  `valid_values.json`. If no source has data for a `Required` field, you may infer —
-  set `inferred: true` (it will be highlighted).
-- **`compliance`** (country of origin, battery, dangerous goods, FCC, Prop 65, …) —
-  **never infer.** Only fill with a firm source (`inferred: false` + a `source_url`
-  or `evidence`). Otherwise set `status: "needs_user_input"` and leave it for the
-  user. The writer enforces this.
-- **`seller_owned`** (SKU, price, condition, fulfillment, shipping template,
-  warranty) — do **not** web-fill. If the user supplied them (intake), write with
-  `source: "user"`; otherwise leave blank. The writer rejects web-sourced values here.
+**Verify each generated Product Id is unique** — web-search it; if it returns
+results, regenerate (re-run) until it's unused (per the ops doc).
 
-  **Optional intake** — offer to collect these once up front so the file can be
-  upload-ready: SKU (or a naming rule), condition (New/Used), price, quantity,
-  fulfillment (FBA/FBM), shipping template, warranty. If the user declines, that's
-  fine — the file is then "attributes-only" (see step 7).
-
-Also set **`::record_action` (Listing Action)** — it isn't in the Required set but
-Amazon needs it to know what to do with each row. Use `Create or Replace (Full
-Update)` for new listings (confirm with the user if unsure); it's an enum, so pick
-the exact value from `valid_values.json`.
-
-Record evidence per field so the report is auditable (see the v2 schema below).
-
-### 5. Write values back (enforced)
-
-Build `values.json` (v2 schema — see `scripts/write_values.py`) and run with enum
-enforcement:
+### 6. Write and validate
 
 ```bash
 python3 scripts/write_values.py values.json --valid-values valid_values.json
-```
-
-The writer: enforces the policy gates above; **hard-fails (no file written) on any
-illegal dropdown value**; auto-corrects enum casing; skips `low`-identity rows
-(unless `--force`); highlights inferred cells; clears the template's example data
-(unless `--keep-examples`); preserves macros, sheets, and dropdown validation; and
-keeps the original extension (`.xlsx`→`.xlsx`, `.xlsm`→`.xlsm`).
-
-v2 `values.json` (per field: value + evidence + status):
-
-```json
-{
-  "template": "<template path>",
-  "rows": [
-    {
-      "upc": "889842188837",
-      "identity_confidence": "high",
-      "identity_evidence": ["UPC exact match on brand site", "MPN matches Keepa"],
-      "values": {
-        "<attribute>": {
-          "value": "16", "source": "keepa", "source_url": "https://…",
-          "evidence": "16GB DDR5 RAM", "confidence": "high",
-          "inferred": false, "status": "filled"
-        }
-      }
-    }
-  ]
-}
-```
-
-### 6. Validate the output
-
-```bash
 python3 scripts/validate_output.py <template>.filled.xlsm --template <template> \
     --fields fields.json --valid-values valid_values.json --json validation_report.json
 ```
 
-Checks: required-field presence (policy-aware), enum legality, UPC/GTIN check
-digit, value/unit pairing, residual example data, structure preservation, and
-**value-level rules** (length / numeric / range — from each field's
-`accepted_values` when it states one, else common Amazon limits in
-`field_rules.json`). Exits non-zero on hard errors (illegal enum, a limit the
-template itself states being exceeded, lost dropdowns/macros/sheets, file won't
-open); length/numeric issues from the heuristic defaults are warnings. Fix and
-re-run before handing the file over.
+`write_values` fills the sheet, clears the template's example data, preserves
+macros/sheets/dropdowns, keeps the original extension, and **warns (not fails) on
+out-of-list dropdown values** (Amazon accepts them for open fields like brand and
+price). `validate_output` checks required presence, UPC check digits, length/rules,
+structure, and the UPLOAD-READINESS verdict.
 
-### 7. Report back to the user
+### 7. Report
 
-Give the file path + a report: which fields were filled, which were **inferred
-(highlighted)**, which need user input (`compliance` / `seller_owned` blanks), any
-UPC that needed the ASIN fallback or is UPC-unverified in Keepa, and the
-`validate_output` verdict — including its **UPLOAD READINESS** line. If that line
-says "attributes-only", label the file **"product attributes filled — NOT
-upload-ready"** rather than implying it can be uploaded as-is.
+Give the file path + a report: rows with **no Product Id** (brand not in the prefix
+table — need attention), any field left blank that needs operator input,
+out-of-list enum warnings, and the validation verdict.
 
 ## Rules
 
-- **Compliance fields are never guessed.** No firm source → `needs_user_input`.
-- **Seller fields never come from the web** — only user intake, else blank.
-- **Enum values must be legal** (from `valid_values.json`); the writer/validator
-  hard-fail otherwise.
-- **Confirm identity first**; a `low`-confidence product is not written.
-- Inferred = highlighted; never silently guess a Required field without the mark.
-- Follow each field's `accepted_values` exactly (format, units, valid values).
-- Keys resolve via env → `./.env` → `~/.config/zq-skills/credentials.json`; never
-  hardcode or commit a key.
-- Output a new file; never overwrite the user's original template.
+- **`org_rules.json` is authoritative** — its fixed defaults and generation rules
+  override web/Keepa values.
+- **Batteries: always blank** — in every category, leave all battery-related fields
+  empty (Are batteries required = No).
+- **Product Id is generated, never the input UPC.** Brand not in the prefix table →
+  no Product Id + highlight. Verify uniqueness by web search.
+- **SKU is generated** (3 groups, 2-4 alnum, unique).
+- **Enum values are advisory** — write the operator/org value even if it isn't in
+  the dropdown (proven acceptable by real uploads); the validator warns.
+- Follow the template's `accepted_values` and length limits; the validator flags
+  violations (template-stated → error, common defaults → warn).
+- Output a new file; never overwrite the operator's original template.
+
+## Data files (edit to keep in sync with the ops doc)
+
+- `org_rules.json` — fixed defaults, generation rules, variant logic (SSOT).
+- `brand_prefixes.json` — brand → UPC 6-digit prefix (from the doc's table).
+- `field_policy.json` — compliance / seller / product classification.
+- `field_rules.json` — length / numeric limits.
 
 See [reference.md](reference.md) for template mechanics and the Keepa→field
-mapping. See [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md) for the roadmap.
+mapping; [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md) for the roadmap.

@@ -36,14 +36,18 @@ def load_org():
 
 
 def build_label_index(fields):
-    """label(lower) -> field; also keep attribute set for direct-attr resolution."""
-    by_label, by_attr = {}, {}
+    """label(lower) -> first field; label(lower) -> all fields (repeated columns);
+    attribute -> field."""
+    by_label, by_label_all, by_attr = {}, {}, {}
     for f in fields:
         lab = str(f.get("label") or "").strip().lower()
-        if lab and lab not in by_label:
-            by_label[lab] = f
+        if lab:
+            by_label.setdefault(lab, f)
+            by_label_all.setdefault(lab, []).append(f)
         by_attr[f["attribute"]] = f
-    return by_label, by_attr
+    for lab in by_label_all:
+        by_label_all[lab].sort(key=lambda x: x["column"])
+    return by_label, by_label_all, by_attr
 
 
 def resolve_field(key, by_label, by_attr):
@@ -84,6 +88,21 @@ def set_cell(row_values, field, value, source, evidence, inferred=False):
     }
 
 
+def set_repeated(row_values, key, values, by_label_all, by_attr, source, evidence):
+    """Spread a list across the repeated columns of a label (Bullet Point #1..#5, …)."""
+    k = str(key).strip().lower()
+    fields = by_label_all.get(k)
+    if not fields:
+        for lab, fl in by_label_all.items():
+            if lab.startswith(k):
+                fields = fl
+                break
+    if not fields and key in by_attr:
+        fields = [by_attr[key]]
+    for f, v in zip(fields or [], values):
+        set_cell(row_values, f, v, source, evidence)
+
+
 def apply_org_fixed(row_values, by_label, by_attr, org, *, is_parent):
     """Apply org fixed + operator defaults to a row (skip parent-excluded fields)."""
     for item in org["fixed_defaults"]:
@@ -109,7 +128,7 @@ def main():
     with open(args.operator_input, encoding="utf-8") as fh:
         op = json.load(fh)
     manifest = build_manifest(args.template)
-    by_label, by_attr = build_label_index(manifest["fields"])
+    by_label, by_label_all, by_attr = build_label_index(manifest["fields"])
     org = load_org()
 
     # Deferred import so a missing brand table surfaces clearly.
@@ -132,9 +151,8 @@ def main():
         # shared operator content (title/desc/bullets/images/specs)
         for key, val in (op.get("shared") or {}).items():
             if isinstance(val, list):
-                # repeated fields (bullets, special features) share one attribute -> only first here
-                f = resolve_field(key, by_label, by_attr)
-                set_cell(rv, f, val[0] if val else None, "operator", f"operator {key}")
+                # repeated fields (bullets #1..#5, special features, …) spread across columns
+                set_repeated(rv, key, val, by_label_all, by_attr, "operator", f"operator {key}")
             else:
                 set_cell(rv, resolve_field(key, by_label, by_attr), val, "operator", f"operator {key}")
         apply_org_fixed(rv, by_label, by_attr, org, is_parent=is_parent)
