@@ -7,5 +7,6 @@ node_modules/
 # zq-amazon-listing-fill run artifacts
 fields.json
 keepa.json
+keepa_asin.json
 values.json
 *.filled.xlsm

@@ -52,17 +52,34 @@ python3 scripts/parse_template.py <template> --required-only --out fields.json
 
 `fields.json` lists every Required / Conditionally Required field with its
 **`accepted_values`** (the filling rule), `label`, `group`, and 1-based `column`.
-The script auto-detects the sheet layout (label/attribute/data rows) from the
-template — it works for any Amazon category, not just this one.
+It also reports the template's **`product_type`** (e.g. `NOTEBOOK_COMPUTER`) — use
+that as the value for the `Product Type` field. The script auto-detects the sheet
+layout (label/attribute/data rows) from the template — it works for any Amazon
+category, not just this one.
 
-### 2. Look up product data by UPC (Keepa)
+### 2. Look up product data (Keepa), with an ASIN fallback
 
 ```bash
 python3 scripts/keepa_lookup.py <UPC> [<UPC> ...] --domain 1 --out keepa.json
 ```
 
-`keepa.json` gives, per UPC: `asin`, `brand`, `title`, `model`, `category_tree`,
-dimensions/weight, `images`, `bullet_points`, etc. `--domain 1` = US marketplace.
+`keepa.json` gives, per query: `found`, `asin`, `brand`, `title`, `model`,
+`category_tree`, dimensions/weight, `images`, `bullet_points`, etc.
+`--domain 1` = US marketplace.
+
+**For any UPC where `found: false`, do the fallback before giving up:**
+
+1. **Web-search the UPC** to find the product's Amazon **ASIN** (search the UPC,
+   brand+model, or the product name; confirm the ASIN belongs to the same item).
+2. If you find an ASIN, **re-query Keepa by ASIN** to recover structured data:
+   ```bash
+   python3 scripts/keepa_lookup.py <ASIN> [<ASIN> ...] --asin --domain 1 --out keepa_asin.json
+   ```
+3. If still nothing (no ASIN, or Keepa has no data for it), **fill from web-search
+   information alone** — and mark those values `inferred: true` where they aren't
+   firmly confirmed.
+
+Never fabricate an ASIN or UPC. Note in the report which UPCs needed the fallback.
 
 ### 3. Resolve each field (your judgment goes here)
 
@@ -92,8 +109,12 @@ python3 scripts/write_values.py values.json
 ```
 
 This writes into the `Template` sheet from its data row down, **highlights every
-inferred cell** with a background color, preserves all other sheets and dropdown
-validations, and saves a new `*.filled.xlsm` (the original is untouched).
+inferred cell** with a background color, and saves a new `*.filled.xlsm` (the
+original is untouched). By default it also **clears the template's built-in
+example/sample data** (the `ABC123`/`Sony…` example row and any leftover sample
+values) so it can't be mistaken for real data — header rows and all other sheets
+and dropdown validations are preserved. Pass `--keep-examples` to leave the
+sample data in place.
 
 ### 5. Report back to the user
 

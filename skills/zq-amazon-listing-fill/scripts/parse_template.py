@@ -18,23 +18,35 @@ Usage:
 Prints a short summary to stdout and writes the full manifest as JSON.
 """
 import argparse
+import base64
 import json
 import re
 import sys
+import urllib.parse
 
 import openpyxl
 
 
 def load_settings(ws):
-    """Read labelRow/attributeRow/dataRow from the Template!A1 settings string."""
-    raw = ws.cell(row=1, column=1).value or ""
+    """Read layout + product type from the Template!A1 settings string."""
+    raw = str(ws.cell(row=1, column=1).value or "")
     def grab(name, default):
-        m = re.search(rf"{name}=(\d+)", str(raw))
+        m = re.search(rf"{name}=(\d+)", raw)
         return int(m.group(1)) if m else default
+    # The product type is base64-encoded in the `ptds` setting, e.g.
+    # ptds=Tk9URUJPT0tfQ09NUFVURVI%3D  ->  NOTEBOOK_COMPUTER
+    product_type = None
+    m = re.search(r"ptds=([^&]+)", raw)
+    if m:
+        try:
+            product_type = base64.b64decode(urllib.parse.unquote(m.group(1))).decode("utf-8")
+        except Exception:  # noqa: BLE001 - best-effort; leave None if it doesn't decode
+            product_type = None
     return {
         "label_row": grab("labelRow", 4),
         "attribute_row": grab("attributeRow", 5),
         "data_row": grab("dataRow", 8),
+        "product_type": product_type,
     }
 
 
@@ -140,6 +152,7 @@ def main():
     from collections import Counter
     dist = Counter(f["required"] for f in manifest["fields"])
     print(f"Template: {manifest['template']}")
+    print(f"Product type: {manifest.get('product_type')}")
     print(f"Layout: label_row={manifest['label_row']} "
           f"attribute_row={manifest['attribute_row']} data_row={manifest['data_row']}")
     print(f"Fields written: {len(manifest['fields'])}  ->  {args.out}")

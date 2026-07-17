@@ -45,11 +45,25 @@ def load_settings(ws):
     return grab("attributeRow", 5), grab("dataRow", 8)
 
 
+def clear_region(ws, from_row, to_row, max_col):
+    """Blank every cell value in rows [from_row, to_row] across columns 1..max_col."""
+    cleared = 0
+    for r in range(from_row, to_row + 1):
+        for c in range(1, max_col + 1):
+            cell = ws.cell(row=r, column=c)
+            if cell.value is not None:
+                cell.value = None
+                cleared += 1
+    return cleared
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("values")
     ap.add_argument("--color", default="FFE0B2",
                     help="ARGB/RGB hex fill for inferred cells (default light orange)")
+    ap.add_argument("--keep-examples", action="store_true",
+                    help="do NOT clear the template's example/sample data before writing")
     args = ap.parse_args()
 
     with open(args.values, encoding="utf-8") as fh:
@@ -62,12 +76,23 @@ def main():
     wb = openpyxl.load_workbook(template, keep_vba=is_macro, data_only=False)
     ws = wb["Template"]
     attr_row, data_row = load_settings(ws)
+    max_col = ws.max_column
 
     # attribute name -> 1-based column index
     col_of = {}
     for cell in next(ws.iter_rows(min_row=attr_row, max_row=attr_row)):
         if cell.value is not None:
             col_of[str(cell.value).strip()] = cell.column
+
+    # Clear Amazon's built-in example/sample data so it can't be mistaken for real
+    # data. This blanks the example/note rows between the attribute row and the
+    # data row, plus any stale values from the data row down — header rows
+    # (labels/attributes and above) are never touched.
+    cleared = 0
+    if not args.keep_examples:
+        n_new = len(spec.get("rows", []))
+        last_data = max(ws.max_row, data_row + n_new - 1)
+        cleared = clear_region(ws, attr_row + 1, last_data, max_col)
 
     fill = PatternFill(start_color=args.color, end_color=args.color, fill_type="solid")
     stats = {"written": 0, "inferred": 0, "unmatched": set()}
@@ -91,6 +116,8 @@ def main():
     wb.save(output)
 
     print(f"Saved: {output}")
+    if not args.keep_examples:
+        print(f"Example data cleared: {cleared} cell(s) (rows {attr_row + 1}+)")
     print(f"Cells written: {stats['written']}  (inferred/colored: {stats['inferred']})")
     print(f"Rows: {len(spec.get('rows', []))}   data starts at Template row {data_row}")
     if stats["unmatched"]:
