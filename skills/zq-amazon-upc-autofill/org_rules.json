@@ -1,0 +1,63 @@
+{
+  "_source": "Feishu doc '亚马逊批量上传表格字段规则' (wiki OwwywNuXcifxJ4k9XBbcod8Bnnc, block ldxfcqD0XQNtTRZS). This is the AUTHORITATIVE rule source for field filling — it OVERRIDES any Keepa/web-derived value. Match entries to template fields by `label` (Data Definitions Local Label) or `attr` (attribute substring).",
+
+  "fixed_defaults": [
+    {"label": "Country of Origin", "value": "United States"},
+    {"label": "Dangerous Goods Regulations", "value": "Not Applicable"},
+    {"label": "Warranty Description", "value": "1-year limited warranty"},
+    {"label": "Modified Product", "value": "Yes"},
+    {"label": "Number of Items", "value": "1"},
+    {"label": "Fulfillment Channel Code", "value": "Fulfillment by Merchant (Default)"},
+    {"label": "Target Region", "value": "Global"},
+    {"label": "Skip Offer", "value": "No"},
+    {"label": "Shipping Template", "value": "Free Shipping"},
+    {"label": "Are batteries required", "value": "No"},
+    {"label": "Product Id Type", "value": "UPC",
+     "note": "multi-variant: fill on CHILD rows only; parent leaves Product Id Type / Product Id blank"}
+  ],
+
+  "operator_defaults": [
+    {"label": "Item Condition", "value": "New", "modifiable": true},
+    {"label": "Quantity", "value": "10", "modifiable": true}
+  ],
+
+  "blank_rules": {
+    "battery_fields_blank": true,
+    "_note": "In ALL categories, regardless of whether the product actually has batteries, treat as 'no battery': leave every battery-related field blank. Exception: 'Are batteries required?' is set to 'No' (see fixed_defaults). Applies to base attribute names containing: battery, lithium, number_of_lithium, cell_composition, un_number, hazmat (battery aspect)."
+  },
+
+  "generation_rules": {
+    "sku": {
+      "pattern": "3 groups of uppercase alphanumeric, each 2-4 chars, joined by '-'. Unique across the batch.",
+      "examples": ["W4-7PKY-IHIX", "GM-AVKR-2C9N"]
+    },
+    "product_id_upc": {
+      "pattern": "brand 6-digit prefix (brand_prefixes.json) + item/check digits = 12-digit UPC-A.",
+      "uniqueness": "web-search the generated UPC; only use it if there are NO results, else regenerate.",
+      "brand_not_in_table": "do NOT generate a UPC; leave Product Id blank and HIGHLIGHT the row in the output/report.",
+      "check_digit_note": "The doc says 'last 6 random'. A valid UPC-A requires a check digit, so the generator uses prefix(6)+random(5)+computed check digit(1). Confirm if you'd rather keep 6 fully-random digits."
+    },
+    "model_year": "current calendar year",
+    "ram_memory_maximum_size": "computer categories, multi-variant: fill using the child with the largest value's unit"
+  },
+
+  "variant_logic": {
+    "parent_row": [
+      "Parentage Level = Parent",
+      "Parent SKU = blank",
+      "Variation Theme Name = same as all children",
+      "Item Name = product family name (no config attributes)",
+      "no price / inventory / shipping",
+      "no UPC/EAN/GTIN (Product Id + Product Id Type blank)"
+    ],
+    "child_row": [
+      "Parentage Level = Child",
+      "Parent SKU = the parent's SKU",
+      "Variation Theme Name = identical to parent",
+      "unique SKU per child",
+      "each sellable child has its own Product Id (or explicit GTIN Exempt)",
+      "children fill price, inventory, images, compliance info",
+      "every attribute in the variation theme must be fully filled per child"
+    ]
+  }
+}

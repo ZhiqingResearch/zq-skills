@@ -1,0 +1,12 @@
+{
+  "_source": "Feishu bitable embedded in the '表格字段规则' doc (base Iot2bX1KAaChWwseWiCcuFwhn4L, table tblF4WjPdv92lxir): 品牌 -> 旗码厂商 (UPC 6-digit company prefix). A brand may have several prefixes; pick any. Brands NOT listed here get NO generated UPC (leave Product Id blank + highlight). Keep in sync with the Feishu table.",
+
+  "prefixes": {
+    "HP":     ["198990", "197961", "199251", "195908", "194850", "196188", "199764", "197498"],
+    "ASUS":   ["197105"],
+    "Lenovo": ["198155", "197530", "197531", "196804", "196803", "199271"],
+    "LG":     ["195174", "719192", "652810"],
+    "acer":   ["195133", "191114", "193199"],
+    "msi":    ["824142"]
+  }
+}
