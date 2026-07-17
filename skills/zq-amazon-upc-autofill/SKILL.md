@@ -11,9 +11,6 @@ UPCs. For each UPC it gathers data from **Keepa and web search in parallel** and
 then hands back the completed `.xlsm`. Values that had to be inferred are
 highlighted so the user can review them.
 
-> SIF (ad/keyword reverse-lookup) is **not** wired in yet — it will later supply
-> keyword/copy fields (title, bullets, search terms). See `reference.md`.
-
 ## Inputs
 
 - An Amazon template file (`.xlsm`/`.xlsx`) — standard multi-sheet flat file.
@@ -211,6 +208,5 @@ upload-ready"** rather than implying it can be uploaded as-is.
   hardcode or commit a key.
 - Output a new file; never overwrite the user's original template.
 
-See [reference.md](reference.md) for template mechanics, the Keepa→field mapping,
-and how SIF will slot in later. See [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md) for
-the roadmap (Phase 2: Keepa hardening, config safety, batch row fidelity).
+See [reference.md](reference.md) for template mechanics and the Keepa→field
+mapping. See [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md) for the roadmap.

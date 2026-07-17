@@ -1,7 +1,7 @@
 # zq-amazon-upc-autofill — reference
 
-Load this when you need the template mechanics, the Keepa→field mapping, source
-priority, or the plan for adding SIF. The main workflow is in `SKILL.md`.
+Load this when you need the template mechanics, the Keepa→field mapping, or the
+source-combination rules. The main workflow is in `SKILL.md`.
 
 ## How Amazon flat-file templates are structured
 
@@ -49,7 +49,7 @@ are filled when Keepa/web provide them.
 
 | Keepa key | Fills (examples) |
 | --------- | ---------------- |
-| `asin` | UPC→ASIN bridge (needed for SIF later); not a template field |
+| `asin` | UPC→ASIN bridge for the ASIN-enrichment lookup; not a template field |
 | `brand` | Brand Name |
 | `manufacturer` | Manufacturer |
 | `title` | Item Name (refine to the rule's length/format) |
@@ -81,8 +81,7 @@ gather both, then per field:
    Country of Origin).
 
 Keepa is *not* a primary with web as backup — the goal is a synthesized, cross-
-checked value per field. (When SIF is added it becomes the preferred source for
-keyword/copy fields — see below.)
+checked value per field.
 
 **Keepa is paid (spends tokens).** The skill asks the user up front whether to use
 it; if declined, it fills from web search only, then offers a Keepa "top-up" if the
@@ -98,16 +97,3 @@ to satisfy a Required field). `write_values.py` fills those cells with a
 background color (default `FFE0B2`, light orange). This is cosmetic — it does not
 affect Amazon's server-side validation on upload — but lets the user review every
 guess at a glance. Always also list inferred fields in the report.
-
-## Adding SIF later
-
-SIF (sif.com) is an **advertising / traffic keyword reverse-lookup** tool. It
-queries by **ASIN** (not UPC) and returns keyword/traffic data, not product specs.
-Planned role:
-
-- Bridge UPC→ASIN via Keepa (already produced by `keepa_lookup.py`).
-- Query SIF by ASIN for high-traffic ad/search keywords.
-- Feed those into **copy/keyword fields**: Item Name, Bullet Point, Product
-  Description, and backend Search Terms — making SIF the preferred source there.
-- Add a `scripts/sif_lookup.py` mirroring `keepa_lookup.py` (env `SIF_API_KEY`,
-  POST JSON with `authorization` header), plus a step in the workflow.

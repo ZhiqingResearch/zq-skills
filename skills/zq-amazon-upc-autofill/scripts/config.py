@@ -18,12 +18,10 @@ from credentials import (CONFIG_PATH, delete_secret, resolve_secret, save_secret
 
 KNOWN = ["KEEPA_API_KEY"]
 
-# Heuristics to catch an obviously wrong key being stored under the wrong name.
+# Heuristics to catch an obviously wrong value being stored under a key name.
 WRONG_TYPE = {
     "KEEPA_API_KEY": lambda v: (
-        "looks like a SIF key" if v.lower().startswith("sif") else
-        "too short for a Keepa key (expected ~64 chars)" if len(v) < 20 else
-        None
+        "too short for a Keepa key (expected ~64 chars)" if len(v) < 20 else None
     ),
 }
 

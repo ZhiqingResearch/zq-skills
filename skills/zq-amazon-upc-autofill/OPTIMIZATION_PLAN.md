@@ -60,8 +60,8 @@ Do these first; they are unambiguous and unblock trust in the rest.
 - **[13] Resolve the credentials contradiction in `SKILL.md`.** The Rules section
   still says keys come from "env/`.env` only" — update it to match the real
   resolver (env → `.env` → `~/.config/zq-skills/credentials.json`).
-- **[14] Hide unimplemented SIF config.** Drop `SIF_API_KEY` from `config.py`'s
-  known keys (or mark it `planned` and refuse to use it) until SIF is wired in.
+- **[14] Remove the unused SIF config.** SIF is not part of the skill; keep only
+  `KEEPA_API_KEY` in `config.py`'s known keys.
 
 ---
 
@@ -188,7 +188,7 @@ Verified live against the saved Keepa key and end-to-end on `NOTEBOOK_COMPUTER.x
 - `unset` / `delete` commands.
 - Read secrets from **stdin** (never argv → keeps keys out of shell history and
   process listings).
-- Reject obvious wrong-type keys (e.g. a `sifapi...`-prefixed value saved as
+- Reject obvious wrong-type values (e.g. a too-short string saved as
   `KEEPA_API_KEY`).
 
 ### 2.3 Batch row fidelity — item 10
