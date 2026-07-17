@@ -5,8 +5,10 @@ Keepa is the only source that accepts a UPC directly; it returns the matching
 ASIN plus catalog attributes. When a UPC has no Keepa match, the agent can find an
 ASIN via web search and re-query here with --asin.
 
-  by UPC:  python3 keepa_lookup.py 889842188837 [more...] --domain 1 --out keepa.json
-  by ASIN: python3 keepa_lookup.py B01NBNDC1T   [more...] --asin --out keepa_asin.json
+  by UPC:    python3 keepa_lookup.py 889842188837 [more...] --domain 1 --out keepa.json
+  by ASIN:   python3 keepa_lookup.py B01NBNDC1T   [more...] --asin --out keepa_asin.json
+  by keyword: python3 keepa_lookup.py "Dell Inspiron 15 3520" --search --out keepa_search.json
+              (each argument is one search term; keyword search costs more tokens)
 
 Hardened client: distinct errors (invalid key / rate limit / out of tokens / no
 product), retry with backoff on 429 + transient failures, gzip/deflate decoding,
@@ -33,7 +35,7 @@ import zlib
 
 from credentials import resolve_secret
 
-API = "https://api.keepa.com/product"
+API_BASE = "https://api.keepa.com"
 
 
 class KeepaError(Exception):
@@ -80,13 +82,9 @@ def _classify_http(code, body_text):
     return f"HTTP {code}. {detail}"
 
 
-def keepa_request(key, domain, *, code=None, asin=None, timeout=60, retries=3):
-    params = {"key": key, "domain": domain}
-    if code is not None:
-        params["code"] = code
-    if asin is not None:
-        params["asin"] = asin
-    url = API + "?" + urllib.parse.urlencode(params)
+def _call(endpoint, params, timeout=60, retries=3):
+    """Shared request core for /product and /search: gzip, retries, error mapping."""
+    url = f"{API_BASE}/{endpoint}?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"Accept-Encoding": "gzip, deflate"})
 
     attempt = 0
@@ -122,6 +120,26 @@ def keepa_request(key, domain, *, code=None, asin=None, timeout=60, retries=3):
                 time.sleep(min(2 ** attempt, 30))
                 continue
             raise KeepaError(f"network error contacting Keepa: {e}")
+
+
+def keepa_request(key, domain, *, code=None, asin=None, timeout=60, retries=3):
+    """Exact lookup on /product by UPC (code=) or ASIN (asin=)."""
+    params = {"key": key, "domain": domain}
+    if code is not None:
+        params["code"] = code
+    if asin is not None:
+        params["asin"] = asin
+    return _call("product", params, timeout, retries)
+
+
+def keepa_search(key, domain, term, timeout=60, retries=3):
+    """Keyword product search on /search. Returns up to 50 matching products.
+
+    Costs more tokens than an exact /product lookup. `term` is space-separated
+    keywords that must all match (min 3 chars each).
+    """
+    params = {"key": key, "domain": domain, "type": "product", "term": term}
+    return _call("search", params, timeout, retries)
 
 
 def validate_key(key, domain=1):
@@ -180,16 +198,45 @@ def normalize(p):
     }
 
 
+def run_search(key, args):
+    """--search mode: each arg is a keyword term; emit candidate products."""
+    results = []
+    for term in args.queries:
+        try:
+            data = keepa_search(key, args.domain, term)
+        except KeepaError as e:
+            results.append({"term": term, "query_type": "search", "found": False, "error": str(e)})
+            print(f"  {term!r}: ERROR {e}", file=sys.stderr)
+            continue
+        products = [p for p in (data.get("products") or []) if p.get("asin")]
+        cands = [normalize(p) for p in products[:10]]
+        results.append({"term": term, "query_type": "search", "found": bool(cands),
+                        "count": len(products), "tokens_left": data.get("tokensLeft"),
+                        "tokens_consumed": data.get("tokensConsumed"), "candidates": cands})
+        print(f"  {term!r}: {len(products)} hit(s)"
+              + (f" — top: {cands[0]['asin']} {str(cands[0].get('title'))[:44]}" if cands else ""),
+              file=sys.stderr)
+    with open(args.out, "w", encoding="utf-8") as fh:
+        json.dump(results, fh, ensure_ascii=False, indent=2)
+    print(f"\nSearched {len(results)} term(s) -> {args.out}  (keyword search costs extra tokens)")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("queries", nargs="+", help="UPCs (default) or ASINs (with --asin)")
+    ap.add_argument("queries", nargs="+",
+                    help="UPCs (default), ASINs (--asin), or keyword terms (--search)")
     ap.add_argument("--asin", action="store_true", help="treat inputs as ASINs, not UPCs")
+    ap.add_argument("--search", action="store_true",
+                    help="treat inputs as keyword search terms (higher token cost)")
     ap.add_argument("--domain", type=int, default=1)
     ap.add_argument("--out", default="keepa.json")
     ap.add_argument("--raw", action="store_true")
     args = ap.parse_args()
 
     key = resolve_key()
+    if args.search:
+        return run_search(key, args)
     qtype = "asin" if args.asin else "upc"
     results = []
     tokens_start = None

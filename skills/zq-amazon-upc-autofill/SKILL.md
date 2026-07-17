@@ -65,33 +65,43 @@ python3 scripts/resolve_valid_values.py <template> --out valid_values.json
 - `parse_template` also reports the **data region** — how many existing values sit
   in the sheet and whether they look like the built-in example vs real user data.
 
-### 2. Gather data from Keepa AND web search (in parallel)
+### 2. Choose sources (Keepa is paid) and gather
 
-Keepa and web search are **two independent sources you use together** — not a
-primary with a fallback. For every UPC, collect **both**, then cross-reference them
-in steps 3–4.
+**Keepa spends tokens — it's a paid tool. At the start of each run, ask the user
+which to use:**
 
-```bash
-python3 scripts/keepa_lookup.py <UPC> [<UPC> ...] --domain 1 --out keepa.json
-```
+> "Use Keepa for this batch (paid, more accurate & structured), or **web search
+> only** (free)?"
 
-Per query: `found`, `asin`, `upc_verified`, `brand`, `title`, `model`,
-`category_tree`, dimensions/weight, `images`, `bullet_points`, etc. `--domain 1` = US.
+**A. Web-search only (user declines Keepa)** — gather every attribute from web
+search alone: retailer pages, the brand's own spec page, datasheets. Keep each
+fact's `source_url` + a short `evidence` snippet. Do **not** call `keepa_lookup.py`.
 
-In parallel, **web-search each UPC** (and brand+model / product name) to gather the
-same attributes independently — retailer pages, the brand's own spec page,
-datasheets. Keep each fact's `source_url` and a short `evidence` snippet.
-
-If Keepa has no direct UPC match (`found:false`) or `upc_verified:false`, still try
-to obtain its structured data: find the ASIN (from web search, or Keepa's own
-keyword search), then enrich via `--asin`:
+**B. Keepa enabled** — gather Keepa **and** web search in parallel (two independent
+sources used together, then synthesized in steps 3–4). Keepa entry points:
 
 ```bash
-python3 scripts/keepa_lookup.py <ASIN> [<ASIN> ...] --asin --domain 1 --out keepa_asin.json
+python3 scripts/keepa_lookup.py <UPC> [<UPC> ...] --domain 1 --out keepa.json          # exact, by UPC
+python3 scripts/keepa_lookup.py <ASIN> [<ASIN> ...] --asin --out keepa_asin.json        # enrich by ASIN
+python3 scripts/keepa_lookup.py "<brand model>" --search --out keepa_search.json        # keyword search
 ```
 
-This is enrichment, not a fallback — you still combine it with web data. Never
-fabricate an ASIN/UPC.
+Keepa gives `found`, `asin`, `upc_verified`, `brand`, `title`, `model`,
+`category_tree`, dimensions/weight, `images`, `bullet_points`, etc. If a UPC has no
+direct match (`found:false`/`upc_verified:false`), find the ASIN via web search or
+`--search` (check the candidate's `upc_list` contains the target UPC), then enrich
+with `--asin`. `--search` costs more tokens than an exact lookup. Never fabricate an
+ASIN/UPC.
+
+**Supplement loop:** after a **web-only** pass, if the result is unsatisfactory —
+required `product_attribute` fields still blank, or `identity_confidence` not
+`high` — ask the user again:
+
+> "Web search left N required fields unfilled / identity unconfirmed. Use Keepa
+> (spends tokens) to fill the gaps?"
+
+If yes, run `keepa_lookup.py` for just those UPCs/gaps and merge; if no, proceed
+web-only (unfilled Required fields get inferred + highlighted per step 4).
 
 ### 3. Establish product identity (confidence gate)
 
@@ -109,13 +119,14 @@ Confirm you have the **right product** by cross-checking the two sources. Set
 
 For every field in `fields_policy.json`, branch on `policy`:
 
-- **`product_attribute`** — **synthesize Keepa + web**: when both agree, use the
-  value with `confidence: high`; when they differ, pick the one that fits the
-  field's `accepted_values` and is better-sourced (prefer the brand/manufacturer
-  spec page or a UPC-verified Keepa record), and record both in `evidence`. Use one
-  source to fill what the other lacks. For dropdown columns, pick a value from
-  `valid_values.json`. If neither source has data for a `Required` field, you may
-  infer — set `inferred: true` (it will be highlighted).
+- **`product_attribute`** — **synthesize the sources you gathered** (web, plus
+  Keepa if enabled): when two independent sources agree, use the value with
+  `confidence: high`; when they differ, pick the one that fits the field's
+  `accepted_values` and is better-sourced (prefer the brand/manufacturer spec page
+  or a UPC-verified Keepa record), and record both in `evidence`. Use one source to
+  fill what the other lacks. For dropdown columns, pick a value from
+  `valid_values.json`. If no source has data for a `Required` field, you may infer —
+  set `inferred: true` (it will be highlighted).
 - **`compliance`** (country of origin, battery, dangerous goods, FCC, Prop 65, …) —
   **never infer.** Only fill with a firm source (`inferred: false` + a `source_url`
   or `evidence`). Otherwise set `status: "needs_user_input"` and leave it for the

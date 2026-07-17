@@ -11,6 +11,7 @@ valid_values.json
 validation_report.json
 keepa.json
 keepa_asin.json
+keepa_search.json
 values.json
 *.filled.xlsm
 *.filled.xlsx

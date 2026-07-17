@@ -84,6 +84,13 @@ Keepa is *not* a primary with web as backup — the goal is a synthesized, cross
 checked value per field. (When SIF is added it becomes the preferred source for
 keyword/copy fields — see below.)
 
+**Keepa is paid (spends tokens).** The skill asks the user up front whether to use
+it; if declined, it fills from web search only, then offers a Keepa "top-up" if the
+web-only pass leaves required fields blank or identity unconfirmed (see SKILL.md
+step 2). Keepa entry points: exact by UPC (`code`), by ASIN (`--asin`), and keyword
+search (`--search "<brand model>"`, higher token cost) — the last returns candidate
+products with their `upc_list` so you can verify the match.
+
 ## Inferred values
 
 A value is **inferred** when it isn't confirmed by any source (an educated guess
