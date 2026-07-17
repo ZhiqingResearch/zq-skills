@@ -6,9 +6,10 @@ description: Fill an Amazon flat-file listing template (.xlsm/.xlsx) for one or 
 # zq-amazon-upc-autofill
 
 Fill the **required** fields of an Amazon flat-file listing template for a batch of
-UPCs, using **Keepa** (product attributes + UPC→ASIN) and **web search** (gap-fill
-and verification), then hand back the completed `.xlsm`. Values that had to be
-inferred are highlighted so the user can review them.
+UPCs. For each UPC it gathers data from **Keepa and web search in parallel** and
+**synthesizes** the two (cross-checking to confirm identity and resolve conflicts),
+then hands back the completed `.xlsm`. Values that had to be inferred are
+highlighted so the user can review them.
 
 > SIF (ad/keyword reverse-lookup) is **not** wired in yet — it will later supply
 > keyword/copy fields (title, bullets, search terms). See `reference.md`.
@@ -64,42 +65,57 @@ python3 scripts/resolve_valid_values.py <template> --out valid_values.json
 - `parse_template` also reports the **data region** — how many existing values sit
   in the sheet and whether they look like the built-in example vs real user data.
 
-### 2. Look up product data (Keepa), with an ASIN fallback
+### 2. Gather data from Keepa AND web search (in parallel)
+
+Keepa and web search are **two independent sources you use together** — not a
+primary with a fallback. For every UPC, collect **both**, then cross-reference them
+in steps 3–4.
 
 ```bash
 python3 scripts/keepa_lookup.py <UPC> [<UPC> ...] --domain 1 --out keepa.json
 ```
 
-Per query: `found`, `asin`, `brand`, `title`, `model`, `category_tree`,
-dimensions/weight, `images`, `bullet_points`, etc. `--domain 1` = US.
+Per query: `found`, `asin`, `upc_verified`, `brand`, `title`, `model`,
+`category_tree`, dimensions/weight, `images`, `bullet_points`, etc. `--domain 1` = US.
 
-**For any UPC where `found: false`:** web-search the UPC to find its Amazon **ASIN**
-(confirm it's the same item), then re-query Keepa by ASIN:
+In parallel, **web-search each UPC** (and brand+model / product name) to gather the
+same attributes independently — retailer pages, the brand's own spec page,
+datasheets. Keep each fact's `source_url` and a short `evidence` snippet.
+
+If Keepa has no direct UPC match (`found:false`) or `upc_verified:false`, still try
+to obtain its structured data: find the ASIN (from web search, or Keepa's own
+keyword search), then enrich via `--asin`:
 
 ```bash
 python3 scripts/keepa_lookup.py <ASIN> [<ASIN> ...] --asin --domain 1 --out keepa_asin.json
 ```
 
-If still nothing, fill from web-search info alone. Never fabricate an ASIN/UPC.
+This is enrichment, not a fallback — you still combine it with web data. Never
+fabricate an ASIN/UPC.
 
 ### 3. Establish product identity (confidence gate)
 
-Before trusting any data for a UPC, confirm you have the **right product**. Set
+Confirm you have the **right product** by cross-checking the two sources. Set
 `identity_confidence` per UPC:
 
 - `high` — the full UPC appears verbatim on a source page, **and** brand + model +
-  MPN agree across ≥2 sources, with no config mixing (RAM/SSD/color consistent).
-- `medium` — mostly consistent but one leg is weak.
-- `low` — can't confirm the item. **The writer will refuse a `low` row** — pause
-  and ask the user rather than fill the wrong product.
+  MPN **agree between Keepa and web** (≥2 independent sources), no config mixing
+  (RAM/SSD/color consistent). `upc_verified:true` from Keepa is a strong signal.
+- `medium` — mostly consistent but one leg is weak or single-sourced.
+- `low` — sources disagree or can't confirm the item. **The writer refuses a `low`
+  row** — pause and ask the user rather than fill the wrong product.
 
-### 4. Resolve each field (your judgment, gated by policy)
+### 4. Resolve each field by combining both sources (gated by policy)
 
 For every field in `fields_policy.json`, branch on `policy`:
 
-- **`product_attribute`** — fill from Keepa/web following `accepted_values`. For
-  dropdown columns, pick a value from `valid_values.json`. If no data is found for a
-  `Required` field, you may infer — set `inferred: true` (it will be highlighted).
+- **`product_attribute`** — **synthesize Keepa + web**: when both agree, use the
+  value with `confidence: high`; when they differ, pick the one that fits the
+  field's `accepted_values` and is better-sourced (prefer the brand/manufacturer
+  spec page or a UPC-verified Keepa record), and record both in `evidence`. Use one
+  source to fill what the other lacks. For dropdown columns, pick a value from
+  `valid_values.json`. If neither source has data for a `Required` field, you may
+  infer — set `inferred: true` (it will be highlighted).
 - **`compliance`** (country of origin, battery, dangerous goods, FCC, Prop 65, …) —
   **never infer.** Only fill with a firm source (`inferred: false` + a `source_url`
   or `evidence`). Otherwise set `status: "needs_user_input"` and leave it for the

@@ -65,17 +65,24 @@ are filled when Keepa/web provide them.
 Keepa dimensions are normalized to **cm** (from mm) and weight stays in **grams** —
 convert to whatever unit the field's `accepted_values` specifies.
 
-## Source priority
+## Source combination (parallel, not fallback)
 
-Per-field, the **filling rule wins**: pick whatever source produces a value that
-matches `accepted_values`. When more than one source fits, prefer:
+Keepa and web search are **two independent sources used together**. For each UPC,
+gather both, then per field:
 
-1. **Keepa** — structured catalog data, and the only UPC-native source.
-2. **web search** — gap-fill, verification, enumerated values (e.g. Country of
-   Origin), and anything Keepa lacks.
+1. The **filling rule wins** — the value must match `accepted_values`.
+2. **When Keepa and web agree**, use that value (`confidence: high`) — agreement is
+   also the main identity signal.
+3. **When they differ**, pick the value that fits the rule and is better-sourced —
+   prefer the brand/manufacturer spec page, or a Keepa record whose `upc_verified`
+   is true — and record both readings in `evidence`.
+4. Use one source to **fill what the other lacks** (Keepa is UPC-native and
+   structured; web reaches brand spec pages, datasheets, enumerated values like
+   Country of Origin).
 
-(When SIF is added it becomes the preferred source for keyword/copy fields — see
-below.)
+Keepa is *not* a primary with web as backup — the goal is a synthesized, cross-
+checked value per field. (When SIF is added it becomes the preferred source for
+keyword/copy fields — see below.)
 
 ## Inferred values
 
