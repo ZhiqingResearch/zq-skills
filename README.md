@@ -35,7 +35,7 @@ Notes:
 
 | Skill | Description |
 | ----- | ----------- |
-| [`zq-amazon-listing-fill`](skills/zq-amazon-listing-fill/SKILL.md) | Fill an Amazon flat-file listing template for a batch of UPCs via Keepa + web search, highlighting inferred values. |
+| [`zq-amazon-upc-autofill`](skills/zq-amazon-upc-autofill/SKILL.md) | Fill an Amazon flat-file listing template for a batch of UPCs via Keepa + web search, highlighting inferred values. |
 | [`zq-commit`](skills/zq-commit/SKILL.md) | Write clear, conventional git commit messages from a staged diff. |
 | [`zq-changelog`](skills/zq-changelog/SKILL.md) | Generate a changelog section from merged commits, with a helper script. |
 

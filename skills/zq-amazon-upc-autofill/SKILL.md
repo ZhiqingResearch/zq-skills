@@ -1,9 +1,9 @@
 ---
-name: zq-amazon-listing-fill
+name: zq-amazon-upc-autofill
 description: Fill an Amazon flat-file listing template (.xlsm/.xlsx) for one or more UPCs by looking up product data via Keepa and web search, then writing the required fields back into the sheet. Use when the user provides an Amazon listing/category template plus UPC codes and asks to auto-fill the required fields and get the completed file back.
 ---
 
-# zq-amazon-listing-fill
+# zq-amazon-upc-autofill
 
 Fill the **required** fields of an Amazon flat-file listing template for a batch of
 UPCs, using **Keepa** (product attributes + UPC→ASIN) and **web search** (gap-fill

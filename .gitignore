@@ -4,7 +4,7 @@ node_modules/
 .env
 .env.*
 
-# zq-amazon-listing-fill run artifacts
+# zq-amazon-upc-autofill run artifacts
 fields.json
 fields_policy.json
 valid_values.json

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manage saved API keys for zq-amazon-listing-fill (stored once, reused forever).
+"""Manage saved API keys for zq-amazon-upc-autofill (stored once, reused forever).
 
   python3 config.py set KEEPA_API_KEY <value>   # save (0600 file). Omit <value> or
   python3 config.py set KEEPA_API_KEY --stdin    #   use --stdin to avoid shell history

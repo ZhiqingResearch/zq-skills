@@ -1,4 +1,4 @@
-# zq-amazon-listing-fill — reference
+# zq-amazon-upc-autofill — reference
 
 Load this when you need the template mechanics, the Keepa→field mapping, source
 priority, or the plan for adding SIF. The main workflow is in `SKILL.md`.

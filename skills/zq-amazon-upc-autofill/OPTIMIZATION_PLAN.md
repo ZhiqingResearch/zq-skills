@@ -1,4 +1,4 @@
-# zq-amazon-listing-fill — Optimization Plan
+# zq-amazon-upc-autofill — Optimization Plan
 
 A staged plan to move the skill from "fill everything, guess if needed" to a
 **confidence-gated, evidence-based, validated** pipeline that refuses to emit a

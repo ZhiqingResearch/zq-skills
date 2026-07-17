@@ -1,4 +1,4 @@
-"""Shared secret resolution for zq-amazon-listing-fill.
+"""Shared secret resolution for zq-amazon-upc-autofill.
 
 Keys are looked up in this order (first hit wins), so a user can pick whatever is
 convenient and never has to touch their shell profile:

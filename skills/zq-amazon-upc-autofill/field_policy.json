@@ -1,5 +1,5 @@
 {
-  "_comment": "Field classification for zq-amazon-listing-fill. Matched (substring, case-insensitive) against a field's BASE attribute name — the part before the first '[' or '#'. First matching class wins in the order: compliance, seller_owned, else product_attribute. Edit freely to add category-specific fields.",
+  "_comment": "Field classification for zq-amazon-upc-autofill. Matched (substring, case-insensitive) against a field's BASE attribute name — the part before the first '[' or '#'. First matching class wins in the order: compliance, seller_owned, else product_attribute. Edit freely to add category-specific fields.",
 
   "compliance": {
     "_meaning": "Safety / legal / regulatory. NEVER inferred. No firm source => status must be needs_user_input, cell left blank.",
