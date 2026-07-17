@@ -141,6 +141,11 @@ For every field in `fields_policy.json`, branch on `policy`:
   fulfillment (FBA/FBM), shipping template, warranty. If the user declines, that's
   fine — the file is then "attributes-only" (see step 7).
 
+Also set **`::record_action` (Listing Action)** — it isn't in the Required set but
+Amazon needs it to know what to do with each row. Use `Create or Replace (Full
+Update)` for new listings (confirm with the user if unsure); it's an enum, so pick
+the exact value from `valid_values.json`.
+
 Record evidence per field so the report is auditable (see the v2 schema below).
 
 ### 5. Write values back (enforced)

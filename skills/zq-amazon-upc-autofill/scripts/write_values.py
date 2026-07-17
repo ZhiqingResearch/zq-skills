@@ -129,24 +129,26 @@ def main():
             col_of[str(cell.value).strip()] = cell.column
 
     # ---- Validation pass (no writes): decide what to write, collect gates ----
-    plan = []                 # (row, col, canonical_value, inferred)
+    # Build per-row cell lists; output rows are assigned contiguously at write time
+    # so skipped/empty rows never leave a blank gap in the middle of the data.
+    row_plans = []            # [(upc, [(col, value, inferred), ...]), ...]
     enum_errors = []          # HARD: illegal enum values -> no file produced
     warnings = []
     skipped = {"compliance": 0, "seller_web": 0, "needs_user_input": 0,
-               "identity_row": 0, "unmatched": 0, "enum_ok_corrected": 0}
+               "identity_row": 0, "unmatched": 0, "empty_row": 0, "enum_ok_corrected": 0}
 
     for i, row in enumerate(spec.get("rows", [])):
-        r = data_row + i
+        pos = i + 1
         upc = row.get("upc", "?")
         ident = norm(row.get("identity_confidence"))
         if not ident:
-            warnings.append(f"row {r} (upc {upc}): no identity_confidence provided")
-        row_blocked = ident == "low" and not args.force
-        if row_blocked:
+            warnings.append(f"upc {upc} (#{pos}): no identity_confidence provided")
+        if ident == "low" and not args.force:
             skipped["identity_row"] += 1
-            warnings.append(f"row {r} (upc {upc}): identity_confidence low -> row NOT written (use --force)")
+            warnings.append(f"upc {upc} (#{pos}): identity_confidence low -> row NOT written (use --force)")
             continue
 
+        cells = []
         for attr, info in (row.get("values") or {}).items():
             col = col_of.get(attr.strip())
             if not col:
@@ -179,42 +181,50 @@ def main():
             if v is not None:
                 key = norm(value)
                 if key not in v["canon"]:
-                    enum_errors.append((r, upc, attr, value, v["raw"]))
+                    enum_errors.append((upc, pos, attr, value, v["raw"]))
                     continue
                 canonical = v["canon"][key]
                 if canonical != value:
                     skipped["enum_ok_corrected"] += 1
                 value = canonical
 
-            plan.append((r, col, value, inferred))
+            cells.append((col, value, inferred))
+
+        if cells:
+            row_plans.append((upc, cells))
+        else:
+            skipped["empty_row"] += 1
+            warnings.append(f"upc {upc} (#{pos}): no writable values -> no row emitted")
 
     if enum_errors:
         print(f"✗ ABORTED — {len(enum_errors)} illegal dropdown value(s); no file written:\n", file=sys.stderr)
-        for r, upc, attr, value, allowed in enum_errors[:20]:
+        for upc, pos, attr, value, allowed in enum_errors[:20]:
             shown = ", ".join(map(str, allowed[:8])) + (" …" if len(allowed) > 8 else "")
-            print(f"  row {r} (upc {upc}) {attr[:40]}\n    got: {value!r}\n    allowed: {shown}", file=sys.stderr)
+            print(f"  upc {upc} (#{pos}) {attr[:40]}\n    got: {value!r}\n    allowed: {shown}", file=sys.stderr)
         sys.exit(1)
 
-    # ---- Write pass ----
+    # ---- Write pass (rows assigned contiguously from data_row) ----
     cleared, sample = 0, []
     if clear_examples:
-        last = max(ws.max_row, data_row + len(spec.get("rows", [])) - 1)
+        last = max(ws.max_row, data_row + len(row_plans) - 1)
         cleared, sample = clear_region(ws, attr_row + 1, last, max_col)
 
     fill = PatternFill(start_color=args.color, end_color=args.color, fill_type="solid")
     written = inferred_n = 0
-    for r, col, value, inferred in plan:
-        cell = ws.cell(row=r, column=col)
-        # Batch fidelity: rows below the first data row inherit the data row's
-        # style/number-format so the whole batch looks and validates consistently.
-        # (Dropdown validations already span the full column, so they apply too.)
-        if r > data_row:
-            cell._style = ws.cell(row=data_row, column=col)._style
-        cell.value = value
-        written += 1
-        if inferred:
-            cell.fill = fill
-            inferred_n += 1
+    for out_idx, (_upc, cells) in enumerate(row_plans):
+        r = data_row + out_idx
+        for col, value, inferred in cells:
+            cell = ws.cell(row=r, column=col)
+            # Batch fidelity: rows below the first data row inherit the data row's
+            # style/number-format so the whole batch looks and validates consistently.
+            # (Dropdown validations already span the full column, so they apply too.)
+            if r > data_row:
+                cell._style = ws.cell(row=data_row, column=col)._style
+            cell.value = value
+            written += 1
+            if inferred:
+                cell.fill = fill
+                inferred_n += 1
 
     wb.save(output)
 

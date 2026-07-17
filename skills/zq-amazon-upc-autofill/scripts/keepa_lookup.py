@@ -143,8 +143,12 @@ def keepa_search(key, domain, term, timeout=60, retries=3):
 
 
 def validate_key(key, domain=1):
-    """Live-check a key with one request. Returns tokensLeft. Raises KeepaError."""
-    data = keepa_request(key, domain, asin="B0000000000", retries=1)
+    """Live-check a key with one request. Returns tokensLeft. Raises KeepaError.
+
+    Uses a syntactically valid 10-char ASIN; whether the product exists doesn't
+    matter — a valid key returns HTTP 200 (+ tokensLeft), a bad key raises.
+    """
+    data = keepa_request(key, domain, asin="B000000000", retries=1)
     return data.get("tokensLeft")
 
 

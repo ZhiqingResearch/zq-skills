@@ -27,13 +27,10 @@ _RULES_PATH = os.path.join(os.path.dirname(__file__), "..", "field_rules.json")
 def _load():
     with open(_RULES_PATH, encoding="utf-8") as fh:
         data = json.load(fh)
-    return (
-        {k.lower(): int(v) for k, v in data.get("max_length", {}).items()},
-        [s.lower() for s in data.get("numeric_base_names", [])],
-    )
+    return {k.lower(): int(v) for k, v in data.get("max_length", {}).items()}
 
 
-_MAX_LEN, _NUMERIC_BASES = _load()
+_MAX_LEN = _load()
 
 
 def parse_accepted(accepted):
@@ -85,9 +82,11 @@ def check(attribute, accepted, value):
         sev = "ERROR" if source == "template" else "WARN"
         issues.append((sev, f"length {len(sval)} exceeds {limit} ({source})"))
 
-    numeric_expected = parsed.get("numeric") or any(b in base_name(attribute) for b in _NUMERIC_BASES)
+    # Only enforce numeric when the template's own accepted_values says so — a
+    # heuristic by field name mis-flags legit text sub-fields (DDR5, SATA,
+    # "1920 x 1080", "15.6 Inches") whose parent attribute is "numeric-ish".
     num = _as_number(value)
-    if numeric_expected and num is None:
+    if parsed.get("numeric") and num is None:
         issues.append(("WARN", f"expected a numeric value, got {sval!r}"))
 
     if "range" in parsed and num is not None:

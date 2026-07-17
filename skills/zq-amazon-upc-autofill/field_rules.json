@@ -16,21 +16,5 @@
     "style": 50
   },
 
-  "numeric_base_names": [
-    "quantity",
-    "number_of_items",
-    "processor_count",
-    "number_of_lithium",
-    "wattage",
-    "voltage",
-    "ram_memory",
-    "hard_disk",
-    "memory_storage_capacity",
-    "computer_memory",
-    "screen_size",
-    "display_size",
-    "item_weight",
-    "package_weight",
-    "resolution"
-  ]
+  "_numeric_note": "Numeric validation is applied ONLY when a field's accepted_values text explicitly states it (e.g. 'numeric', 'must be a number', a range). A by-name heuristic was removed because it mis-flagged legit text sub-fields (DDR5, SATA, '1920 x 1080') of numeric-ish attributes."
 }
