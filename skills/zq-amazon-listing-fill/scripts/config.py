@@ -12,7 +12,9 @@ import sys
 
 from credentials import CONFIG_PATH, resolve_secret, save_secret, source_of
 
-KNOWN = ["KEEPA_API_KEY", "SIF_API_KEY"]
+# Only keys the skill actually uses. SIF is not wired in yet, so it is
+# intentionally omitted to avoid implying it can be configured/used.
+KNOWN = ["KEEPA_API_KEY"]
 
 
 def mask(v):

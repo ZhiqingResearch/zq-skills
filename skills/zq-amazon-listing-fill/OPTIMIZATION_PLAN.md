@@ -192,7 +192,16 @@ Report is machine-readable (JSON) + human summary, with per-issue severity.
 
 ---
 
-## Open decisions (need your call before Phase 1 build)
+## Decisions (locked)
+
+1. **Seller-owned fields:** support both — optional up-front intake; otherwise
+   leave blank + flag and label the file "attributes-only, not upload-ready".
+2. **Enum enforcement:** hard-fail on resolvable illegal values; `enum_unresolved`
+   + warn where `INDIRECT` can't be resolved.
+3. **Identity gate:** pause on `low` only.
+4. **Build order:** Phase 0 first (done), then stop for Phase 1 sign-off.
+
+## Open decisions (resolved above; kept for context)
 
 1. **Seller-owned fields:** collect them up front via an intake prompt, or leave
    blank + flag and label the file "attributes-only, not upload-ready"? (Recommend:

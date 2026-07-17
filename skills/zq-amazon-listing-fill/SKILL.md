@@ -128,7 +128,9 @@ match. State that highlighted cells are inferred and worth reviewing.
   listing rejected on upload.
 - Only touch Required (always) and Conditionally Required (when data exists) fields.
 - Inferred = highlighted. Never silently guess a Required field without the mark.
-- Keys come from env/`.env` only — never hardcode or commit them.
+- Keys are resolved by `credentials.resolve_secret`: env var → `./.env` →
+  `~/.config/zq-skills/credentials.json` (see the Prerequisites section). Never
+  hardcode a key in the repo or commit one.
 - Output a new file; never overwrite the user's original template.
 
 See [reference.md](reference.md) for template mechanics, the Keepa→field mapping,

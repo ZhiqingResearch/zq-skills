@@ -143,8 +143,9 @@ def main():
 
     manifest = build_manifest(args.template)
     if args.required_only:
+        keep = {"Required", "Conditionally Required"}
         manifest["fields"] = [f for f in manifest["fields"]
-                              if "Required" in f["required"]]
+                              if f["required"] in keep]
 
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, ensure_ascii=False, indent=2)

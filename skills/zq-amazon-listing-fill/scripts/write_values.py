@@ -70,7 +70,9 @@ def main():
         spec = json.load(fh)
 
     template = spec["template"]
-    output = spec.get("output") or re.sub(r"\.xls[mx]$", ".filled.xlsm", template)
+    # Preserve the original extension: .xlsx -> .filled.xlsx, .xlsm -> .filled.xlsm.
+    base, ext = os.path.splitext(template)
+    output = spec.get("output") or f"{base}.filled{ext}"
     is_macro = template.lower().endswith(".xlsm")
 
     wb = openpyxl.load_workbook(template, keep_vba=is_macro, data_only=False)
