@@ -132,10 +132,10 @@ def main():
     # Build per-row cell lists; output rows are assigned contiguously at write time
     # so skipped/empty rows never leave a blank gap in the middle of the data.
     row_plans = []            # [(upc, [(col, value, inferred), ...]), ...]
-    enum_errors = []          # HARD: illegal enum values -> no file produced
     warnings = []
     skipped = {"compliance": 0, "seller_web": 0, "needs_user_input": 0,
-               "identity_row": 0, "unmatched": 0, "empty_row": 0, "enum_ok_corrected": 0}
+               "identity_row": 0, "unmatched": 0, "empty_row": 0,
+               "enum_ok_corrected": 0, "enum_mismatch": 0}
 
     for i, row in enumerate(spec.get("rows", [])):
         pos = i + 1
@@ -181,12 +181,18 @@ def main():
             if v is not None:
                 key = norm(value)
                 if key not in v["canon"]:
-                    enum_errors.append((upc, pos, attr, value, v["raw"]))
-                    continue
-                canonical = v["canon"][key]
-                if canonical != value:
-                    skipped["enum_ok_corrected"] += 1
-                value = canonical
+                    # Not every list-validation is a CLOSED enum — Amazon accepts
+                    # out-of-list values for open fields (brand, price). A real
+                    # uploaded listing proves this, so warn and write as-is rather
+                    # than abort.
+                    skipped["enum_mismatch"] += 1
+                    warnings.append(f"enum: '{attr[:40]}' = {value!r} not in dropdown "
+                                    f"({len(v['raw'])} listed) — writing as-is")
+                else:
+                    canonical = v["canon"][key]
+                    if canonical != value:
+                        skipped["enum_ok_corrected"] += 1
+                    value = canonical
 
             cells.append((col, value, inferred))
 
@@ -195,13 +201,6 @@ def main():
         else:
             skipped["empty_row"] += 1
             warnings.append(f"upc {upc} (#{pos}): no writable values -> no row emitted")
-
-    if enum_errors:
-        print(f"✗ ABORTED — {len(enum_errors)} illegal dropdown value(s); no file written:\n", file=sys.stderr)
-        for upc, pos, attr, value, allowed in enum_errors[:20]:
-            shown = ", ".join(map(str, allowed[:8])) + (" …" if len(allowed) > 8 else "")
-            print(f"  upc {upc} (#{pos}) {attr[:40]}\n    got: {value!r}\n    allowed: {shown}", file=sys.stderr)
-        sys.exit(1)
 
     # ---- Write pass (rows assigned contiguously from data_row) ----
     cleared, sample = 0, []
@@ -234,8 +233,9 @@ def main():
         print(f"Example data cleared: {cleared} cell(s)" + (f"  e.g. {', '.join(sample[:5])}" if sample else ""))
     print(f"Cells written: {written}  (inferred/highlighted: {inferred_n})")
     if valid:
-        print(f"Enum enforcement: ON ({len(valid)} resolved dropdown columns)"
-              + (f", {skipped['enum_ok_corrected']} casing-corrected" if skipped["enum_ok_corrected"] else ""))
+        print(f"Enum check: {len(valid)} dropdown columns"
+              + (f", {skipped['enum_ok_corrected']} casing-corrected" if skipped["enum_ok_corrected"] else "")
+              + (f", {skipped['enum_mismatch']} out-of-list (written as-is, see warnings)" if skipped["enum_mismatch"] else ""))
     else:
         print("Enum enforcement: OFF (pass --valid-values valid_values.json to enable)")
     gates = {k: v for k, v in skipped.items() if v and k != "enum_ok_corrected"}

@@ -104,7 +104,9 @@ def main():
             for col, aset in allowed.items():
                 v = ws.cell(row=r, column=col).value
                 if v not in (None, "") and str(v).strip().lower() not in aset:
-                    add("ERROR", f"row {r} col {col} ({col_attr.get(col)}): illegal enum value {v!r}")
+                    # WARN, not ERROR: some list-validations are open (brand, price)
+                    # and Amazon accepts out-of-list values (proven by real uploads).
+                    add("WARN", f"row {r} col {col} ({col_attr.get(col)}): value {v!r} not in dropdown")
 
     # Required-field presence (policy-aware) + upload-readiness verdict
     needs_user = 0
