@@ -118,10 +118,57 @@ def apply_org_fixed(row_values, by_label, by_attr, org, *, is_parent):
         set_cell(row_values, f, item["value"], "org_rule", f"org default: {item['label']}")
 
 
+def _num(v):
+    import re
+    m = re.search(r"-?\d+(?:\.\d+)?", str(v or ""))
+    return float(m.group()) if m else None
+
+
+def apply_item_type_keyword(rows, field, allowed):
+    """Auto-fill / canonicalize Item Type Keyword against the template's valid values."""
+    if not field or not allowed:
+        return
+    attr = field["attribute"]
+    canon = {a.lower(): a for a in allowed}
+    for row in rows:
+        cur = row["values"].get(attr, {}).get("value") if attr in row["values"] else None
+        if cur:
+            if cur.lower() in canon:
+                continue
+            match = next((a for a in allowed if cur.lower() in a.lower()), None)  # partial -> full path
+            if match:
+                row["values"][attr] = {"value": match, "source": "operator",
+                                       "evidence": "canonicalized item type keyword",
+                                       "inferred": False, "status": "filled"}
+        elif len(allowed) == 1:  # unambiguous -> auto-fill
+            row["values"][attr] = {"value": allowed[0], "source": "org_rule",
+                                   "evidence": "only valid item type keyword",
+                                   "inferred": False, "status": "filled"}
+
+
+def apply_ram_max(rows, field):
+    """Org rule: RAM Memory Maximum Size = the largest value among rows (with its unit)."""
+    if not field:
+        return
+    attr = field["attribute"]
+    vals = [(row["values"][attr]["value"]) for row in rows if attr in row["values"]]
+    nums = [(_num(v), v) for v in vals if _num(v) is not None]
+    if len(nums) < 2:
+        return
+    _, maxv = max(nums, key=lambda x: x[0])
+    for row in rows:
+        if attr in row["values"]:
+            row["values"][attr]["value"] = str(maxv)
+            row["values"][attr]["evidence"] = "org rule: max RAM among variants"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("operator_input")
     ap.add_argument("--template", required=True)
+    ap.add_argument("--valid-values", help="valid_values.json (auto-fill Item Type Keyword)")
+    ap.add_argument("--exclude-upcs", default="",
+                    help="comma-separated UPCs already used/found — regenerate around them")
     ap.add_argument("--out", default="values.json")
     args = ap.parse_args()
 
@@ -139,7 +186,9 @@ def main():
     theme = op.get("variation_theme")
     multi = bool(op.get("multi_variant"))
     brand = op.get("brand")
-    used_skus, used_upcs, highlights = set(), set(), []
+    used_skus = set()
+    used_upcs = set(u.strip() for u in args.exclude_upcs.split(",") if u.strip())
+    highlights = []
 
     def base_row(is_parent):
         rv = {}
@@ -202,6 +251,17 @@ def main():
             set_cell(row, resolve_field(key, by_label, by_attr), val, "operator", f"field {key}")
         rows.append({"upc": upc or f"SINGLE:{sku}", "identity_confidence": "high",
                      "identity_evidence": ["org-composed"], "values": row})
+
+    # Post-processing rules (Item Type Keyword auto-fill, RAM max)
+    if args.valid_values:
+        with open(args.valid_values, encoding="utf-8") as fh:
+            vv = json.load(fh)
+        allowed_by_col = {int(c["column"]): c.get("allowed") or []
+                          for c in (vv.get("columns") or {}).values() if c.get("resolved")}
+        itk = resolve_field("Item Type Keyword", by_label, by_attr)
+        if itk:
+            apply_item_type_keyword(rows, itk, allowed_by_col.get(itk["column"], []))
+    apply_ram_max(rows, resolve_field("RAM Memory Maximum Size", by_label, by_attr))
 
     out = {"template": args.template, "clear_examples": True, "rows": rows}
     with open(args.out, "w", encoding="utf-8") as fh:
