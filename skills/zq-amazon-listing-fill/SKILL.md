@@ -108,6 +108,11 @@ For every field in `fields_policy.json`, branch on `policy`:
   warranty) — do **not** web-fill. If the user supplied them (intake), write with
   `source: "user"`; otherwise leave blank. The writer rejects web-sourced values here.
 
+  **Optional intake** — offer to collect these once up front so the file can be
+  upload-ready: SKU (or a naming rule), condition (New/Used), price, quantity,
+  fulfillment (FBA/FBM), shipping template, warranty. If the user declines, that's
+  fine — the file is then "attributes-only" (see step 7).
+
 Record evidence per field so the report is auditable (see the v2 schema below).
 
 ### 5. Write values back (enforced)
@@ -161,8 +166,9 @@ won't open). Fix and re-run before handing the file over.
 
 Give the file path + a report: which fields were filled, which were **inferred
 (highlighted)**, which need user input (`compliance` / `seller_owned` blanks), any
-UPC that needed the ASIN fallback, and the `validate_output` verdict. **If seller
-fields weren't provided, label the file "product attributes filled — NOT
+UPC that needed the ASIN fallback or is UPC-unverified in Keepa, and the
+`validate_output` verdict — including its **UPLOAD READINESS** line. If that line
+says "attributes-only", label the file **"product attributes filled — NOT
 upload-ready"** rather than implying it can be uploaded as-is.
 
 ## Rules

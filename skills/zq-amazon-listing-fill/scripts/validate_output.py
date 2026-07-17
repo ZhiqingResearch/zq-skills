@@ -105,7 +105,8 @@ def main():
                 if v not in (None, "") and str(v).strip().lower() not in aset:
                     add("ERROR", f"row {r} col {col} ({col_attr.get(col)}): illegal enum value {v!r}")
 
-    # Required-field presence (policy-aware)
+    # Required-field presence (policy-aware) + upload-readiness verdict
+    needs_user = 0
     if args.fields:
         with open(args.fields, encoding="utf-8") as fh:
             fields = json.load(fh)["fields"]
@@ -115,7 +116,14 @@ def main():
                 if ws.cell(row=r, column=f["column"]).value in (None, ""):
                     pol = classify(f["attribute"])
                     sev = "WARN" if pol == "product_attribute" else "INFO"
+                    if pol in ("compliance", "seller_owned"):
+                        needs_user += 1
                     add(sev, f"row {r}: Required '{f['label']}' blank ({pol})")
+        if needs_user:
+            add("INFO", f"UPLOAD READINESS: attributes-only — {needs_user} required "
+                        f"compliance/seller field(s) need user input before upload")
+        else:
+            add("INFO", "UPLOAD READINESS: all required fields present")
 
     # UPC / product-id check digit
     pid_col = next((c for c, a in col_attr.items() if a and "product_id_value" in a), None)

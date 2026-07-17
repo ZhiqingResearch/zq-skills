@@ -165,6 +165,12 @@ Report is machine-readable (JSON) + human summary, with per-issue severity.
 
 ## Phase 2 — Robustness & correctness of the data path — items 8, 9, 10, 7
 
+**Status: DONE.** Keepa client hardened (distinct 400/401/402/429/no-product errors,
+retry+backoff, gzip, UPC-match verification, best-of-multiple, token accounting);
+config safety (`validate` live check, `unset`, stdin input, wrong-type rejection);
+batch row style fidelity; seller intake + `validate_output` UPLOAD-READINESS verdict.
+Verified live against the saved Keepa key and end-to-end on `NOTEBOOK_COMPUTER.xlsm`.
+
 ### 2.1 Harden the Keepa client — item 8
 
 - **Key precheck** via a cheap `/token` call; clear messages for 401 / 400 /

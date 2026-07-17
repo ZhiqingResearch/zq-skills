@@ -62,6 +62,20 @@ def save_secret(name, value):
     return CONFIG_PATH
 
 
+def delete_secret(name):
+    """Remove a secret from the user-level config file. Returns True if removed."""
+    data = _load_config()
+    if name not in data:
+        return False
+    del data[name]
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+    os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)  # 0600
+    os.replace(tmp, CONFIG_PATH)
+    return True
+
+
 def source_of(name):
     """Where would `name` resolve from? For diagnostics/messages."""
     if _from_env(name):

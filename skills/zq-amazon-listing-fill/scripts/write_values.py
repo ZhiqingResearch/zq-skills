@@ -204,7 +204,13 @@ def main():
     fill = PatternFill(start_color=args.color, end_color=args.color, fill_type="solid")
     written = inferred_n = 0
     for r, col, value, inferred in plan:
-        cell = ws.cell(row=r, column=col, value=value)
+        cell = ws.cell(row=r, column=col)
+        # Batch fidelity: rows below the first data row inherit the data row's
+        # style/number-format so the whole batch looks and validates consistently.
+        # (Dropdown validations already span the full column, so they apply too.)
+        if r > data_row:
+            cell._style = ws.cell(row=data_row, column=col)._style
+        cell.value = value
         written += 1
         if inferred:
             cell.fill = fill
