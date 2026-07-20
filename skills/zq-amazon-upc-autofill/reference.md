@@ -118,3 +118,8 @@ to satisfy a Required field). `write_values.py` fills those cells with a
 background color (default `FFE0B2`, light orange). This is cosmetic — it does not
 affect Amazon's server-side validation on upload — but lets the user review every
 guess at a glance. Always also list inferred fields in the report.
+
+**0720 explicit allow-list:** item/package dimensions and weights
+(`org_rules.json` → `dimension_weight_guess`) **must** be filled; when sources lack
+them, guess from similar products and mark `inferred`. Other specs still follow
+"don't fabricate" unless covered by `inferable_rules` / `autofill_rules`.

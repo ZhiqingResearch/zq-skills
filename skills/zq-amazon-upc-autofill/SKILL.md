@@ -66,7 +66,9 @@ Cross-source agreement raises confidence.
 For any UPC that **search can't resolve** (`found:false`, or missing specs), guide
 the operator to supply the fields the ops doc lists them as owning: category,
 brand, product info (purchase link / manual / notes — **operator notes win
-conflicts**), variant attributes, price, store. Never fabricate specs.
+conflicts**), variant attributes, price, store. Never fabricate specs — **except**
+item/package dimensions & weights (see Rules / `dimension_weight_guess`): those
+are required and **may be guess-filled from similar products** (mark `inferred`).
 
 ### 4. Build the operator_input
 
@@ -94,9 +96,38 @@ This produces the full parent+child rows and applies `org_rules.json`:
 - **SKU** generated (3 groups of 2-4 alphanumerics, unique).
 - **Product Id (UPC)** generated from the brand prefix (valid check digit). Brand
   not in `brand_prefixes.json` → no Product Id, row highlighted in the output.
-- **Parent/child**: parent has no price/inventory/Product Id; each child gets a
-  unique SKU + generated UPC + price + the varying attribute; all variants share
+- **Parent/child**: parent clears fulfillment/price/quantity/inventory/shipping,
+  sets **Skip Offer = Yes**, no Product Id; each child gets a unique SKU +
+  generated UPC + price + the varying attribute; all variants share
   title/description/bullets/images.
+- **Deterministic `autofill_rules`** are applied automatically by compose (rules
+  that carry an `action` in `org_rules.json`): value normalization (e.g.
+  `802.11be` → `802.11.be`), `default_when_empty` lists (Specific Uses, Included
+  Components), `clear_when_global` (Notebook compliance fields), plus **unit
+  backfill** when a `.value` is set and its `.unit` column has exactly one allowed
+  value. The compose output prints an "Autofill rules applied" summary.
+
+#### Agent-owned rules (compose can't do these — do them while building `operator_input`)
+
+These `inferable_rules` / `autofill_rules` need product judgment, source reading, or
+generation, so they have **no `action`** and are your responsibility. Work through
+this checklist for the product's category before composing:
+
+- **Dimensions/weights** (all categories): if sources lack item/package L·W·H·weight,
+  guess from similar products and mark `inferred` — they are **required**.
+- **Computer categories** (`PERSONAL_COMPUTER` / `NOTEBOOK_COMPUTER`):
+  - USB 2.0 / 3.0 port counts (fallback 0 / 1 when not found).
+  - RAM Memory Technology (DDR4/DDR5/LPDDR), CPU Base Speed, SSD Interface / Form Factor.
+  - SSD → Hard Disk Rotational Speed = 0 (unit RPM); integrated graphics →
+    Graphics Ram Size 0/GB, Graphics Card Interface = Integrated, Graphics Ram = Shared.
+  - CPU Socket (AIO/mobile → BGA, else Integrated); Human Interface Input
+    (touch → Touchscreen; AIO adds Keyboard/Mouse).
+- **SPEAKERS**: Speaker Maximum Output Power (extract if present); its unit → Watts.
+- **All categories**: Model Year (current year only when source lacks one);
+  **Special Features ×5** (generate product-relevant phrases).
+
+`compose_listing.py` reads these entries too, so keep `org_rules.json` the single
+source; the `rule` text marks each agent-owned item with `(agent: …)`.
 
 **Verify each generated Product Id is unique** — web-search it; if it returns
 results, regenerate (re-run) until it's unused (per the ops doc).
@@ -123,13 +154,17 @@ out-of-list enum warnings, and the validation verdict.
 
 ## Rules
 
-- **`org_rules.json` is authoritative** — its fixed defaults and generation rules
-  override web/Keepa values.
+- **`org_rules.json` is authoritative** — its fixed defaults, generation rules,
+  `inferable_rules`, and `autofill_rules` override web/Keepa values.
 - **Batteries: always blank** — in every category, leave all battery-related fields
   empty (Are batteries required = No).
+- **Dimensions/weights (0720):** item + package L/W/H/weight are **required**. If
+  purchase/reference info lacks them, search similar products and **guess-fill**
+  (`inferred: true`). See `dimension_weight_guess` in `org_rules.json`.
 - **Product Id is generated, never the input UPC.** Brand not in the prefix table →
   no Product Id + highlight. Verify uniqueness by web search.
 - **SKU is generated** (3 groups, 2-4 alnum, unique).
+- **Parent Skip Offer = Yes**; clear parent fulfillment/price/quantity/inventory.
 - **Enum values are advisory** — write the operator/org value even if it isn't in
   the dropdown (proven acceptable by real uploads); the validator warns.
 - Follow the template's `accepted_values` and length limits; the validator flags

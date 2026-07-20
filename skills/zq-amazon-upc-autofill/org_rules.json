@@ -1,5 +1,5 @@
 {
-  "_source": "Feishu doc '亚马逊批量上传表格字段规则' (wiki OwwywNuXcifxJ4k9XBbcod8Bnnc, block ldxfcqD0XQNtTRZS). This is the AUTHORITATIVE rule source for field filling — it OVERRIDES any Keepa/web-derived value. Match entries to template fields by `label` (Data Definitions Local Label) or `attr` (attribute substring).",
+  "_source": "Feishu doc '表格字段规则' (wiki OwwywNuXcifxJ4k9XBbcod8Bnnc / bitable block ldxfcqD0XQNtTRZS / docx PLIBdN5Wto4aWHxnMBQcOKBDnWg). This is the AUTHORITATIVE rule source for field filling — it OVERRIDES any Keepa/web-derived value. Match entries to template fields by `label` (Data Definitions Local Label) or `attr` (attribute substring). Synced with '增加规则（0720测试后更新）'.",
 
   "fixed_defaults": [
     {"label": "Country of Origin", "value": "United States"},
@@ -9,7 +9,8 @@
     {"label": "Number of Items", "value": "1"},
     {"label": "Fulfillment Channel Code", "value": "Fulfillment by Merchant (Default)"},
     {"label": "Target Region", "value": "Global"},
-    {"label": "Skip Offer", "value": "No"},
+    {"label": "Skip Offer", "value": "No",
+     "note": "child/single rows only; parent overrides to Yes (see parent_offer_clear)"},
     {"label": "Shipping Template", "value": "Free Shipping"},
     {"label": "Are batteries required", "value": "No"},
     {"label": "Product Id Type", "value": "UPC",
@@ -37,8 +38,8 @@
       "brand_not_in_table": "do NOT generate a UPC; leave Product Id blank and HIGHLIGHT the row in the output/report.",
       "check_digit_note": "The doc says 'last 6 random'. A valid UPC-A requires a check digit, so the generator uses prefix(6)+random(5)+computed check digit(1). Confirm if you'd rather keep 6 fully-random digits."
     },
-    "model_year": "current calendar year",
-    "ram_memory_maximum_size": "computer categories, multi-variant: fill using the child with the largest value's unit"
+    "ram_memory_maximum_size": "computer categories, multi-variant: fill using the child with the largest value's unit",
+    "_see_also": "Per-field fill/normalize/clear rules live in autofill_rules; category-scoped inferable fallbacks in inferable_rules. Model Year and Special Features are defined there (single source of truth), not duplicated here."
   },
 
   "variant_logic": {
@@ -47,7 +48,8 @@
       "Parent SKU = blank",
       "Variation Theme Name = same as all children",
       "Item Name = product family name (no config attributes)",
-      "no price / inventory / shipping",
+      "no price / inventory / shipping / fulfillment (see parent_offer_clear)",
+      "Skip Offer = Yes",
       "no UPC/EAN/GTIN (Product Id + Product Id Type blank)"
     ],
     "child_row": [
@@ -57,7 +59,194 @@
       "unique SKU per child",
       "each sellable child has its own Product Id (or explicit GTIN Exempt)",
       "children fill price, inventory, images, compliance info",
+      "Skip Offer = No (from fixed_defaults)",
       "every attribute in the variation theme must be fully filled per child"
     ]
-  }
+  },
+
+  "parent_offer_clear": {
+    "_note": "0720: Parent row auto-clears fulfillment/price/quantity/inventory; keep only variant-relationship fields + Skip Offer=Yes.",
+    "skip_offer": "Yes",
+    "clear_label_substrings": [
+      "List Price",
+      "Your Price",
+      "Quantity",
+      "Number of Items",
+      "Shipping Template",
+      "Fulfillment Channel",
+      "Inventory"
+    ]
+  },
+
+  "dimension_weight_guess": {
+    "_note": "0720 [全类目]: when purchase/reference info lacks item or package size/weight, search similar products and GUESS-FILL. These fields are REQUIRED; guessing is explicitly allowed.",
+    "required": true,
+    "allow_guess": true,
+    "inferred": true,
+    "item_fields": [
+      "Item Length Horizontal Edge",
+      "Item Length Unit",
+      "Thickness Front to Back",
+      "Item Thickness Unit",
+      "Item Width Vertical Edge",
+      "Item Width Unit",
+      "Item Display Weight",
+      "Item Display Weight Unit"
+    ],
+    "package_fields": [
+      "Item Package Length",
+      "Package Length Unit",
+      "Item Package Width",
+      "Package Width Unit",
+      "Item Package Height",
+      "Package Height Unit",
+      "Package Weight",
+      "Package Weight Unit"
+    ]
+  },
+
+  "inferable_rules": [
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Total USB 2.0 Ports",
+      "rule": "Count USB 2.0 ports from web/PDF port lists; if not found, fill 0."
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Total USB 3.0 Ports",
+      "rule": "Count USB 3.x / USB-C / USB-A 3.x from port lists; if not found, fill 1."
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "RAM Memory Technology",
+      "rule": "Extract DDR4/DDR5/LPDDR from descriptions and normalize to an accepted value."
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "CPU Base Speed",
+      "rule": "Derive base clock from CPU specs."
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Solid State Storage Drive Interface",
+      "rule": "Extract from descriptions like 'PCIe NVMe M.2 SSD'."
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Solid State Storage Drive Form Factor",
+      "rule": "Extract 'M.2' from descriptions like 'M.2 SSD'."
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Total USB 2.0 Ports",
+      "rule": "Count USB 2.0 ports from web/PDF port lists; if not found, fill 0."
+    },
+    {
+      "category": "SPEAKERS",
+      "label": "Speaker Maximum Output Power",
+      "rule": "If purchase info has max power, extract the number; otherwise leave blank."
+    }
+  ],
+
+  "_autofill_rules_note": "Each rule has category ('*' = all), label (template Local Label), and a human-readable rule. Rules with an `action` object are applied deterministically by compose_listing.apply_autofill_rules; rules WITHOUT an action are agent-owned (need product judgment or generation — see SKILL.md checklist). action.type: normalize (map current value X->Y), default_when_empty (spread `values` across the label's repeated cells only if all currently empty; marked inferred), clear_when_global (clear this label's cells when Target Region == Global). Global unit backfill is handled separately via single-option unit columns.",
+
+  "autofill_rules": [
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Wireless Communication Standard",
+      "rule": "Rewrite 802.11be to the template-accepted form 802.11.be.",
+      "action": {"type": "normalize", "map": {"802.11be": "802.11.be"}}
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Hard Disk Rotational Speed",
+      "rule": "For SSD write 0; unit field = RPM. (agent: requires knowing the drive is an SSD)"
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "CPU Socket",
+      "rule": "AIO/mobile platforms default to BGA; if not accepted, use Integrated. (agent: requires platform judgment)"
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Specific Uses for Product",
+      "rule": "Default three cells: Business / Personal / Everyday Use.",
+      "action": {"type": "default_when_empty", "values": ["Business", "Personal", "Everyday Use"]}
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Included Components",
+      "rule": "Default four cells: Computer / Keyboard & Mouse / Power Adapter / User Manual.",
+      "action": {"type": "default_when_empty", "values": ["Computer", "Keyboard & Mouse", "Power Adapter", "User Manual"]}
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Human Interface Input",
+      "rule": "Touch models → Touchscreen; AIO bundles also add Keyboard / Mouse. (agent: requires touch/AIO judgment)"
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Graphics Ram Size",
+      "rule": "Integrated graphics → value 0, unit GB. (agent: requires knowing graphics is integrated)"
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Compliance - Notebook Computer Type",
+      "rule": "When Target Region is Global / ships_globally, clear this field.",
+      "action": {"type": "clear_when_global"}
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Compliance - Included Components",
+      "rule": "When Target Region is Global / ships_globally, clear this field.",
+      "action": {"type": "clear_when_global"}
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Graphics Card Interface",
+      "rule": "Integrated graphics → Integrated. (agent: requires knowing graphics is integrated)"
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Graphics Ram",
+      "rule": "Integrated graphics → Shared. (agent: requires knowing graphics is integrated)"
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Included Components",
+      "rule": "Default four cells: Laptop / AC Adapter / Power Cable / User Manual.",
+      "action": {"type": "default_when_empty", "values": ["Laptop", "AC Adapter", "Power Cable", "User Manual"]}
+    },
+    {
+      "category": "*",
+      "label": "Specific Uses for Product",
+      "rule": "Default three cells: Business / Personal / Everyday Use.",
+      "action": {"type": "default_when_empty", "values": ["Business", "Personal", "Everyday Use"]}
+    },
+    {
+      "category": "*",
+      "label": "Model Year",
+      "rule": "If source material has no year, write the current calendar year. (agent: only when source lacks a year)"
+    },
+    {
+      "category": "SPEAKERS",
+      "label": "Speaker Maximum Output Power Unit",
+      "rule": "Child rows default to Watts. (agent: only when the power value is present)"
+    },
+    {
+      "category": "*",
+      "label": "parent fulfillment/price/quantity/inventory",
+      "rule": "Parent row: clear those offer fields; keep variant-relationship fields; Skip Offer = Yes. (handled by parent_offer_clear)"
+    },
+    {
+      "category": "*",
+      "label": "numeric value with empty unit",
+      "rule": "Auto-fill matching unit when value is present but unit is empty. Known units: MHz, GHz, RPM, GB, TB, Inches, Pounds, Watts. (deterministic subset: applied automatically when the unit column has exactly one allowed value)"
+    },
+    {
+      "category": "*",
+      "label": "Special Features",
+      "rule": "Generate 5 product-relevant feature phrases into the 5 Special Features cells. (agent: generation)"
+    }
+  ]
 }

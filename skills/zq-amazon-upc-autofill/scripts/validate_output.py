@@ -16,6 +16,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import re
 import sys
 import zipfile
@@ -24,7 +25,48 @@ import openpyxl
 
 import field_rules
 from field_policy import classify
-from parse_template import load_definitions, load_settings
+from parse_template import build_manifest, load_definitions, load_settings
+
+_ORG_PATH = os.path.join(os.path.dirname(__file__), "..", "org_rules.json")
+
+
+def _cat_match(rule_cat, product_type):
+    rc = str(rule_cat or "").strip().lower()
+    if rc in ("", "*"):
+        return True
+    pt = str(product_type or "").strip().lower()
+    return bool(pt) and rc == pt
+
+
+def check_agent_autofill(add, template, rows, ws, org_path=_ORG_PATH):
+    """Backstop: for the template's category, flag agent-owned autofill/inferable
+    rule fields (no `action`) that exist in the template but are blank in every data
+    row — the agent likely skipped a rule from the ops doc. INFO, never blocking."""
+    if not template or not os.path.exists(org_path):
+        return
+    try:
+        with open(org_path, encoding="utf-8") as fh:
+            org = json.load(fh)
+        manifest = build_manifest(template)
+    except Exception:  # noqa: BLE001
+        return
+    product_type = manifest.get("product_type")
+    by_label = {}
+    for f in manifest.get("fields", []):
+        lab = str(f.get("label") or "").strip().lower()
+        if lab:
+            by_label.setdefault(lab, []).append(f["column"])
+    for rule in (org.get("inferable_rules", []) + org.get("autofill_rules", [])):
+        if rule.get("action") or not _cat_match(rule.get("category"), product_type):
+            continue
+        cols = by_label.get(str(rule.get("label") or "").strip().lower())
+        if not cols:
+            continue
+        blank = all(ws.cell(row=r, column=c).value in (None, "")
+                    for r in rows for c in cols)
+        if blank:
+            add("INFO", f"autofill rule not applied: '{rule['label']}' blank "
+                        f"— {rule.get('rule', '')[:80]}")
 
 
 def gtin_check_ok(code):
@@ -170,6 +212,9 @@ def main():
                         add("WARN", f"row {r} col {c} ({a}): value {v!r} matches template example — possible residual")
         except Exception:  # noqa: BLE001
             pass
+
+    # Backstop: agent-owned autofill/inferable rule fields left blank for this category
+    check_agent_autofill(add, args.template, rows, ws)
 
     _emit(issues, args.json)
     errors = sum(1 for i in issues if i["severity"] == "ERROR")

@@ -10,8 +10,8 @@ rows, applying:
     Condition/Quantity operator defaults),
   - SKU generation (3-group) and UPC generation (brand prefix + check digit; brand
     not in brand_prefixes.json -> no UPC + highlight),
-  - parent/child variant logic (parent: no price/inventory/UPC; children: unique
-    SKU + UPC + price + the varying attribute).
+  - parent/child variant logic (parent: clear offer fields + Skip Offer=Yes, no
+    UPC; children: unique SKU + UPC + price + the varying attribute).
 
 The emitted values.json is fed to write_values.py --valid-values (which enforces
 enum legality and preserves the template). Field data the operator supplies (title,
@@ -24,6 +24,8 @@ Usage:
 import argparse
 import json
 import os
+import re
+from collections import Counter
 
 from parse_template import build_manifest
 
@@ -74,13 +76,19 @@ def resolve_field(key, by_label, by_attr):
 
 
 def is_battery_field(attr):
-    a = attr.lower()
+    a = str(attr or "").lower()
     return any(t in a for t in ("battery", "lithium", "cell_composition", "un_number")) \
         and "are_batteries_required" not in a and "batteries_required" not in a
 
 
 def set_cell(row_values, field, value, source, evidence, inferred=False):
     if field is None or value in (None, ""):
+        return
+    # Org rule (all categories): every battery-related field stays blank, no matter
+    # what the operator/web supplies. 'Are batteries required?' is excluded above and
+    # still handled by fixed_defaults. This is the single write chokepoint, so the
+    # rule holds regardless of caller.
+    if is_battery_field(field["attribute"]):
         return
     row_values[field["attribute"]] = {
         "value": str(value), "source": source, "evidence": evidence,
@@ -103,13 +111,25 @@ def set_repeated(row_values, key, values, by_label_all, by_attr, source, evidenc
         set_cell(row_values, f, v, source, evidence)
 
 
+def _parent_clear_match(label, clear_substrings):
+    lab = (label or "").lower()
+    return any(s.lower() in lab for s in clear_substrings)
+
+
 def apply_org_fixed(row_values, by_label, by_attr, org, *, is_parent):
     """Apply org fixed + operator defaults to a row (skip parent-excluded fields)."""
+    parent_clear = org.get("parent_offer_clear") or {}
+    clear_subs = parent_clear.get("clear_label_substrings") or []
     for item in org["fixed_defaults"]:
         f = resolve_field(item["label"], by_label, by_attr)
         # Parent rows don't carry Product Id Type (children only).
         if is_parent and "product id type" in item["label"].lower():
             continue
+        # 0720: parent clears fulfillment / price / quantity / inventory / shipping.
+        if is_parent and _parent_clear_match(item["label"], clear_subs):
+            continue
+        if is_parent and "skip offer" in item["label"].lower():
+            continue  # set explicitly in apply_parent_offer_clear
         set_cell(row_values, f, item["value"], "org_rule", f"org fixed: {item['label']}")
     for item in org["operator_defaults"]:
         if is_parent:  # defaults like Condition/Quantity are child (offer) fields
@@ -118,8 +138,24 @@ def apply_org_fixed(row_values, by_label, by_attr, org, *, is_parent):
         set_cell(row_values, f, item["value"], "org_rule", f"org default: {item['label']}")
 
 
+def apply_parent_offer_clear(row_values, by_label, by_attr, by_label_all, org):
+    """0720: strip offer fields from the parent row; Skip Offer = Yes."""
+    parent_clear = org.get("parent_offer_clear") or {}
+    clear_subs = parent_clear.get("clear_label_substrings") or []
+    skip_val = parent_clear.get("skip_offer") or "Yes"
+    set_cell(row_values, resolve_field("Skip Offer", by_label, by_attr),
+             skip_val, "org_rule", "parent not offered (0720)")
+    # Drop any offer cells that slipped in via shared operator content.
+    drop_attrs = set()
+    for lab, fields in by_label_all.items():
+        if _parent_clear_match(lab, clear_subs):
+            for f in fields:
+                drop_attrs.add(f["attribute"])
+    for attr in drop_attrs:
+        row_values.pop(attr, None)
+
+
 def _num(v):
-    import re
     m = re.search(r"-?\d+(?:\.\d+)?", str(v or ""))
     return float(m.group()) if m else None
 
@@ -144,6 +180,123 @@ def apply_item_type_keyword(rows, field, allowed):
             row["values"][attr] = {"value": allowed[0], "source": "org_rule",
                                    "evidence": "only valid item type keyword",
                                    "inferred": False, "status": "filled"}
+
+
+def _cat_match(rule_cat, product_type):
+    rc = str(rule_cat or "").strip().lower()
+    if rc in ("", "*"):
+        return True
+    pt = str(product_type or "").strip().lower()
+    return bool(pt) and rc == pt
+
+
+def _row_is_parent(row, by_label, by_attr):
+    f = resolve_field("Parentage Level", by_label, by_attr)
+    if not f:
+        return False
+    cell = row["values"].get(f["attribute"])
+    return bool(cell) and str(cell.get("value", "")).strip().lower() == "parent"
+
+
+def _label_fields(label, by_label, by_label_all, by_attr):
+    """All template columns for a label (repeated cells first), else single/attr."""
+    k = str(label).strip().lower()
+    fields = by_label_all.get(k)
+    if not fields:
+        for lab, fl in by_label_all.items():
+            if lab.startswith(k):
+                fields = fl
+                break
+    if not fields:
+        one = resolve_field(label, by_label, by_attr)
+        fields = [one] if one else []
+    return fields
+
+
+def apply_autofill_rules(rows, by_label, by_label_all, by_attr, org, product_type):
+    """Apply the deterministic subset of org autofill_rules (those with an `action`).
+
+    Rules without an `action` are agent-owned (need product judgment / generation)
+    and are left for the agent per the SKILL.md checklist.
+    """
+    applied = []
+    tr_field = resolve_field("Target Region", by_label, by_attr)
+    for rule in org.get("autofill_rules", []):
+        action = rule.get("action")
+        if not action or not _cat_match(rule.get("category"), product_type):
+            continue
+        label = rule.get("label")
+        atype = action.get("type")
+        fields = _label_fields(label, by_label, by_label_all, by_attr)
+        if not fields:
+            continue
+
+        if atype == "normalize":
+            amap = {str(k).strip().lower(): v for k, v in (action.get("map") or {}).items()}
+            for row in rows:
+                for f in fields:
+                    cell = row["values"].get(f["attribute"])
+                    if not cell:
+                        continue
+                    mapped = amap.get(str(cell.get("value", "")).strip().lower())
+                    if mapped is not None and mapped != cell.get("value"):
+                        cell["value"] = str(mapped)
+                        cell["evidence"] = f"autofill normalize: {label}"
+                        applied.append(f"normalize {label} -> {mapped}")
+
+        elif atype == "default_when_empty":
+            values = action.get("values") or []
+            for row in rows:
+                already = any(f["attribute"] in row["values"] for f in fields)
+                if already:
+                    continue
+                for f, v in zip(fields, values):
+                    set_cell(row["values"], f, v, "org_rule",
+                             f"autofill default: {label}", inferred=True)
+                if fields and values:
+                    applied.append(f"default {label} ({len(values)} cell(s))")
+
+        elif atype == "clear_when_global":
+            for row in rows:
+                is_global = True
+                if tr_field:
+                    tr = row["values"].get(tr_field["attribute"])
+                    is_global = bool(tr) and str(tr.get("value", "")).strip().lower() == "global"
+                if not is_global:
+                    continue
+                for f in fields:
+                    if row["values"].pop(f["attribute"], None) is not None:
+                        applied.append(f"clear-on-global {label}")
+    return applied
+
+
+def apply_unit_backfill(rows, by_attr, allowed_by_col):
+    """Deterministic unit backfill: when a `<x>.value` cell is filled but its sibling
+    `<x>.unit` is empty AND that unit column has exactly one allowed value, fill it.
+
+    Only the single-allowed-value case is safe to automate (no ambiguity between,
+    e.g., GB vs TB). Ambiguous units stay for the agent / validator to flag.
+    """
+    applied = []
+    for row in rows:
+        for attr in list(row["values"].keys()):
+            if not attr.endswith(".value"):
+                continue
+            val = row["values"][attr].get("value")
+            if val in (None, ""):
+                continue
+            unit_attr = attr[:-6] + ".unit"
+            uf = by_attr.get(unit_attr)
+            if not uf:
+                continue
+            if unit_attr in row["values"] and row["values"][unit_attr].get("value") not in (None, ""):
+                continue
+            allowed = allowed_by_col.get(uf["column"]) or []
+            if len(allowed) == 1:
+                set_cell(row["values"], uf, allowed[0], "org_rule",
+                         "autofill unit: only allowed unit")
+                applied.append(f"unit {unit_attr} = {allowed[0]}")
+    return applied
 
 
 def apply_ram_max(rows, field):
@@ -216,7 +369,7 @@ def main():
         set_cell(prow, resolve_field("SKU", by_label, by_attr), parent_sku, "generated", "SKU 3-group")
         set_cell(prow, resolve_field("Parentage Level", by_label, by_attr), "Parent", "org_rule", "variant: parent")
         set_cell(prow, resolve_field("Variation Theme Name", by_label, by_attr), theme, "operator", "variation theme")
-        set_cell(prow, resolve_field("Skip Offer", by_label, by_attr), "Yes", "org_rule", "parent not offered")
+        apply_parent_offer_clear(prow, by_label, by_attr, by_label_all, org)
         rows.append({"upc": f"PARENT:{parent_sku}", "identity_confidence": "high",
                      "identity_evidence": ["org-composed parent"], "values": prow})
         # Children
@@ -252,7 +405,8 @@ def main():
         rows.append({"upc": upc or f"SINGLE:{sku}", "identity_confidence": "high",
                      "identity_evidence": ["org-composed"], "values": row})
 
-    # Post-processing rules (Item Type Keyword auto-fill, RAM max)
+    # Post-processing rules (Item Type Keyword auto-fill, RAM max, autofill engine)
+    allowed_by_col = {}
     if args.valid_values:
         with open(args.valid_values, encoding="utf-8") as fh:
             vv = json.load(fh)
@@ -263,10 +417,19 @@ def main():
             apply_item_type_keyword(rows, itk, allowed_by_col.get(itk["column"], []))
     apply_ram_max(rows, resolve_field("RAM Memory Maximum Size", by_label, by_attr))
 
+    # Deterministic org autofill_rules (normalize / default_when_empty / clear_when_global)
+    autofilled = apply_autofill_rules(rows, by_label, by_label_all, by_attr, org, product_type)
+    if allowed_by_col:
+        autofilled += apply_unit_backfill(rows, by_attr, allowed_by_col)
+
     out = {"template": args.template, "clear_examples": True, "rows": rows}
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=2)
     print(f"Composed {len(rows)} row(s) ({'multi-variant' if multi else 'single'}) -> {args.out}")
+    if autofilled:
+        print(f"Autofill rules applied ({len(autofilled)}):")
+        for msg, n in Counter(autofilled).most_common():
+            print(f"  - {msg}" + (f"  x{n}" if n > 1 else ""))
     if highlights:
         print("HIGHLIGHT (no UPC — brand not in prefix table):")
         for h in highlights:
