@@ -100,12 +100,19 @@ This produces the full parent+child rows and applies `org_rules.json`:
   sets **Skip Offer = Yes**, no Product Id; each child gets a unique SKU +
   generated UPC + price + the varying attribute; all variants share
   title/description/bullets/images.
-- **Deterministic `autofill_rules`** are applied automatically by compose (rules
-  that carry an `action` in `org_rules.json`): value normalization (e.g.
-  `802.11be` → `802.11.be`), `default_when_empty` lists (Specific Uses, Included
-  Components), `clear_when_global` (Notebook compliance fields), plus **unit
-  backfill** when a `.value` is set and its `.unit` column has exactly one allowed
-  value. The compose output prints an "Autofill rules applied" summary.
+- **Deterministic rules** are applied automatically by compose from BOTH
+  `autofill_rules` and `inferable_rules` in `org_rules.json` (any entry carrying an
+  `action`). Every fill is guarded on the target being empty, so operator/web values
+  always win. Action types: `normalize` (e.g. `802.11be` → `802.11.be`),
+  `default_when_empty` lists (Specific Uses, Included Components), `clear_when_global`
+  (Notebook compliance fields), `infer_default` (single-value fallback with optional
+  `unit` + optional `when` gate — e.g. **Total USB 2.0 = 0**, **USB 3.0 = 1**,
+  SSD → **Hard Disk Rotational Speed = 0 RPM** (when Hard Disk Description contains
+  SSD), integrated graphics → **Graphics Card Interface = Integrated / Graphics Ram
+  = Shared / Graphics Ram Size = 0 GB** (when Graphics Coprocessor is empty)),
+  `sum_labels` (**Total USB Ports = USB 2.0 + USB 3.0**), plus **unit backfill** when
+  a `.value` is set and its `.unit` column has exactly one allowed value. The compose
+  output prints an "Autofill rules applied" summary.
 
 #### Agent-owned rules (compose can't do these — do them while building `operator_input`)
 
@@ -116,12 +123,16 @@ this checklist for the product's category before composing:
 - **Dimensions/weights** (all categories): if sources lack item/package L·W·H·weight,
   guess from similar products and mark `inferred` — they are **required**.
 - **Computer categories** (`PERSONAL_COMPUTER` / `NOTEBOOK_COMPUTER`):
-  - USB 2.0 / 3.0 port counts (fallback 0 / 1 when not found).
   - RAM Memory Technology (DDR4/DDR5/LPDDR), CPU Base Speed, SSD Interface / Form Factor.
-  - SSD → Hard Disk Rotational Speed = 0 (unit RPM); integrated graphics →
-    Graphics Ram Size 0/GB, Graphics Card Interface = Integrated, Graphics Ram = Shared.
   - CPU Socket (AIO/mobile → BGA, else Integrated); Human Interface Input
     (touch → Touchscreen; AIO adds Keyboard/Mouse).
+  - *Already automated by compose (you only override when research gives a better
+    value): USB 2.0 / 3.0 port counts (fallback 0 / 1), Total USB Ports (sum),
+    SSD → Hard Disk Rotational Speed 0 RPM, integrated graphics → Graphics Card
+    Interface = Integrated / Graphics Ram = Shared / Graphics Ram Size 0 GB. To get
+    the correct SSD / integrated-graphics behavior, put the drive type in **Hard Disk
+    Description** ("SSD") and leave **Graphics Coprocessor** empty for integrated (or
+    fill it with the discrete GPU name to suppress the integrated defaults).*
 - **SPEAKERS**: Speaker Maximum Output Power (extract if present); its unit → Watts.
 - **All categories**: Model Year (current year only when source lacks one);
   **Special Features ×5** (generate product-relevant phrases).

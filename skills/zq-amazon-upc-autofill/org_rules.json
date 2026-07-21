@@ -109,12 +109,20 @@
     {
       "category": "PERSONAL_COMPUTER",
       "label": "Total USB 2.0 Ports",
-      "rule": "Count USB 2.0 ports from web/PDF port lists; if not found, fill 0."
+      "rule": "Count USB 2.0 ports from web/PDF port lists; if not found, fill 0. (fallback auto-applied by compose when empty)",
+      "action": {"type": "infer_default", "value": "0"}
     },
     {
       "category": "PERSONAL_COMPUTER",
       "label": "Total USB 3.0 Ports",
-      "rule": "Count USB 3.x / USB-C / USB-A 3.x from port lists; if not found, fill 1."
+      "rule": "Count USB 3.x / USB-C / USB-A 3.x from port lists; if not found, fill 1. (fallback auto-applied by compose when empty)",
+      "action": {"type": "infer_default", "value": "1"}
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Total USB Ports",
+      "rule": "Total USB ports = Total USB 2.0 + Total USB 3.0 (derived when empty).",
+      "action": {"type": "sum_labels", "labels": ["Total USB 2.0 Ports", "Total USB 3.0 Ports"]}
     },
     {
       "category": "PERSONAL_COMPUTER",
@@ -139,7 +147,20 @@
     {
       "category": "NOTEBOOK_COMPUTER",
       "label": "Total USB 2.0 Ports",
-      "rule": "Count USB 2.0 ports from web/PDF port lists; if not found, fill 0."
+      "rule": "Count USB 2.0 ports from web/PDF port lists; if not found, fill 0. (fallback auto-applied by compose when empty)",
+      "action": {"type": "infer_default", "value": "0"}
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Total USB 3.0 Ports",
+      "rule": "Count USB 3.x / USB-C / USB-A 3.x from port lists; if not found, fill 1. (fallback auto-applied by compose when empty)",
+      "action": {"type": "infer_default", "value": "1"}
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Total USB Ports",
+      "rule": "Total USB ports = Total USB 2.0 + Total USB 3.0 (derived when empty).",
+      "action": {"type": "sum_labels", "labels": ["Total USB 2.0 Ports", "Total USB 3.0 Ports"]}
     },
     {
       "category": "SPEAKERS",
@@ -148,7 +169,7 @@
     }
   ],
 
-  "_autofill_rules_note": "Each rule has category ('*' = all), label (template Local Label), and a human-readable rule. Rules with an `action` object are applied deterministically by compose_listing.apply_autofill_rules; rules WITHOUT an action are agent-owned (need product judgment or generation — see SKILL.md checklist). action.type: normalize (map current value X->Y), default_when_empty (spread `values` across the label's repeated cells only if all currently empty; marked inferred), clear_when_global (clear this label's cells when Target Region == Global). Global unit backfill is handled separately via single-option unit columns.",
+  "_autofill_rules_note": "Each rule has category ('*' = all), label (template Local Label), and a human-readable rule. Rules with an `action` object are applied deterministically by compose_listing.apply_autofill_rules (which reads BOTH autofill_rules and inferable_rules); rules WITHOUT an action are agent-owned (need product judgment or generation — see SKILL.md checklist). Every action fills only when the target cell(s) are empty, so operator/web values always win. action.type: normalize (map current value X->Y); default_when_empty (spread `values` across the label's repeated cells only if all currently empty; marked inferred); clear_when_global (clear this label's cells when Target Region == Global); infer_default (fill the label's first cell with `value` when empty — optional `unit`/`unit_label` fills the sibling unit column, optional `when` {label, contains|equals|empty|not_empty} gates on another field's current value); sum_labels (fill the label with the numeric sum of `labels` when empty and every source is numeric — runs after infer_default). Global unit backfill is handled separately via single-option unit columns.",
 
   "autofill_rules": [
     {
@@ -160,7 +181,16 @@
     {
       "category": "PERSONAL_COMPUTER",
       "label": "Hard Disk Rotational Speed",
-      "rule": "For SSD write 0; unit field = RPM. (agent: requires knowing the drive is an SSD)"
+      "rule": "For SSD write 0; unit field = RPM. Auto-applied when Hard Disk Description contains 'SSD'.",
+      "action": {"type": "infer_default", "value": "0", "unit": "RPM",
+                 "when": {"label": "Hard Disk Description", "contains": "SSD"}}
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Hard Disk Rotational Speed",
+      "rule": "For SSD write 0; unit field = RPM. Auto-applied when Hard Disk Description contains 'SSD'.",
+      "action": {"type": "infer_default", "value": "0", "unit": "RPM",
+                 "when": {"label": "Hard Disk Description", "contains": "SSD"}}
     },
     {
       "category": "PERSONAL_COMPUTER",
@@ -187,7 +217,23 @@
     {
       "category": "PERSONAL_COMPUTER",
       "label": "Graphics Ram Size",
-      "rule": "Integrated graphics → value 0, unit GB. (agent: requires knowing graphics is integrated)"
+      "rule": "Integrated graphics → value 0, unit GB. Auto-applied when no discrete GPU (Graphics Coprocessor empty).",
+      "action": {"type": "infer_default", "value": "0", "unit": "GB",
+                 "when": {"label": "Graphics Coprocessor", "empty": true}}
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Graphics Card Interface",
+      "rule": "Integrated graphics → Integrated. Auto-applied when no discrete GPU (Graphics Coprocessor empty).",
+      "action": {"type": "infer_default", "value": "Integrated",
+                 "when": {"label": "Graphics Coprocessor", "empty": true}}
+    },
+    {
+      "category": "PERSONAL_COMPUTER",
+      "label": "Graphics Ram",
+      "rule": "Integrated graphics → Shared. Auto-applied when no discrete GPU (Graphics Coprocessor empty).",
+      "action": {"type": "infer_default", "value": "Shared",
+                 "when": {"label": "Graphics Coprocessor", "empty": true}}
     },
     {
       "category": "NOTEBOOK_COMPUTER",
@@ -204,12 +250,23 @@
     {
       "category": "NOTEBOOK_COMPUTER",
       "label": "Graphics Card Interface",
-      "rule": "Integrated graphics → Integrated. (agent: requires knowing graphics is integrated)"
+      "rule": "Integrated graphics → Integrated. Auto-applied when no discrete GPU (Graphics Coprocessor empty).",
+      "action": {"type": "infer_default", "value": "Integrated",
+                 "when": {"label": "Graphics Coprocessor", "empty": true}}
     },
     {
       "category": "NOTEBOOK_COMPUTER",
       "label": "Graphics Ram",
-      "rule": "Integrated graphics → Shared. (agent: requires knowing graphics is integrated)"
+      "rule": "Integrated graphics → Shared. Auto-applied when no discrete GPU (Graphics Coprocessor empty).",
+      "action": {"type": "infer_default", "value": "Shared",
+                 "when": {"label": "Graphics Coprocessor", "empty": true}}
+    },
+    {
+      "category": "NOTEBOOK_COMPUTER",
+      "label": "Graphics Ram Size",
+      "rule": "Integrated graphics → value 0, unit GB. Auto-applied when no discrete GPU (Graphics Coprocessor empty).",
+      "action": {"type": "infer_default", "value": "0", "unit": "GB",
+                 "when": {"label": "Graphics Coprocessor", "empty": true}}
     },
     {
       "category": "NOTEBOOK_COMPUTER",

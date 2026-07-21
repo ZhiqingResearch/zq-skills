@@ -213,25 +213,98 @@ def _label_fields(label, by_label, by_label_all, by_attr):
     return fields
 
 
-def apply_autofill_rules(rows, by_label, by_label_all, by_attr, org, product_type):
-    """Apply the deterministic subset of org autofill_rules (those with an `action`).
+def _row_label_value(row, label, by_label, by_label_all, by_attr):
+    """First non-empty value currently set for `label` in this row (or None)."""
+    for f in _label_fields(label, by_label, by_label_all, by_attr):
+        if not f:
+            continue
+        cell = row["values"].get(f["attribute"])
+        if cell and cell.get("value") not in (None, ""):
+            return cell.get("value")
+    return None
 
-    Rules without an `action` are agent-owned (need product judgment / generation)
-    and are left for the agent per the SKILL.md checklist.
+
+def _condition_met(row, when, by_label, by_label_all, by_attr):
+    """Evaluate an infer_default `when` clause against a row's current values.
+
+    Supported keys: label + one of {contains, equals, empty, not_empty}. No `when`
+    (or no label) => always true.
+    """
+    if not when:
+        return True
+    lab = when.get("label")
+    if not lab:
+        return True
+    cur = _row_label_value(row, lab, by_label, by_label_all, by_attr)
+    cur_s = "" if cur is None else str(cur).strip()
+    if when.get("empty"):
+        return cur_s == ""
+    if when.get("not_empty"):
+        return cur_s != ""
+    if "equals" in when:
+        return cur_s.lower() == str(when["equals"]).strip().lower()
+    if "contains" in when:
+        return str(when["contains"]).strip().lower() in cur_s.lower()
+    return cur_s != ""
+
+
+def _set_unit(row, label, unit_label, unit_value, by_label, by_label_all, by_attr, applied):
+    """Fill a value field's sibling unit (explicit unit_label, else '<label> Unit')."""
+    if unit_value in (None, ""):
+        return
+    ulabel = unit_label or f"{label} Unit"
+    ufields = _label_fields(ulabel, by_label, by_label_all, by_attr)
+    if ufields and ufields[0]:
+        cell = row["values"].get(ufields[0]["attribute"])
+        if not cell or cell.get("value") in (None, ""):
+            set_cell(row["values"], ufields[0], unit_value, "org_rule",
+                     f"autofill unit: {ulabel}", inferred=True)
+
+
+def apply_autofill_rules(rows, by_label, by_label_all, by_attr, org, product_type):
+    """Apply the deterministic subset of org rules (those carrying an `action`).
+
+    Reads both `autofill_rules` and `inferable_rules` (SKILL.md documents this) —
+    only entries WITH an `action` are applied here. Rules WITHOUT an `action` stay
+    agent-owned (need product judgment / generation) per the SKILL.md checklist.
+    Values the operator/web already supplied are never overwritten: every fill is
+    guarded on the target cell(s) being empty.
     """
     applied = []
     tr_field = resolve_field("Target Region", by_label, by_attr)
-    for rule in org.get("autofill_rules", []):
+    # inferable_rules run first so derived rules (e.g. sum of USB ports) see them.
+    all_rules = list(org.get("inferable_rules", [])) + list(org.get("autofill_rules", []))
+    # Two passes: fills first, then aggregations (sum_labels) that read those fills.
+    sum_rules = []
+    for rule in all_rules:
         action = rule.get("action")
         if not action or not _cat_match(rule.get("category"), product_type):
             continue
         label = rule.get("label")
         atype = action.get("type")
+        if atype == "sum_labels":
+            sum_rules.append(rule)
+            continue
         fields = _label_fields(label, by_label, by_label_all, by_attr)
         if not fields:
             continue
 
-        if atype == "normalize":
+        if atype in ("infer_default", "conditional_fill"):
+            value = action.get("value")
+            when = action.get("when")
+            for row in rows:
+                if any(row["values"].get(f["attribute"], {}).get("value") not in (None, "")
+                       for f in fields if f):
+                    continue  # operator/web already filled it
+                if not _condition_met(row, when, by_label, by_label_all, by_attr):
+                    continue
+                set_cell(row["values"], fields[0], value, "org_rule",
+                         f"autofill inferred default: {label}", inferred=True)
+                _set_unit(row, label, action.get("unit_label"), action.get("unit"),
+                          by_label, by_label_all, by_attr, applied)
+                applied.append(f"infer {label} = {value}")
+
+        elif atype == "normalize":
             amap = {str(k).strip().lower(): v for k, v in (action.get("map") or {}).items()}
             for row in rows:
                 for f in fields:
@@ -267,6 +340,30 @@ def apply_autofill_rules(rows, by_label, by_label_all, by_attr, org, product_typ
                 for f in fields:
                     if row["values"].pop(f["attribute"], None) is not None:
                         applied.append(f"clear-on-global {label}")
+
+    # Second pass: aggregations that depend on the fills above (e.g. Total USB Ports
+    # = USB 2.0 + USB 3.0). Only fills when the target is empty and every source has
+    # a numeric value.
+    for rule in sum_rules:
+        label = rule.get("label")
+        action = rule["action"]
+        fields = _label_fields(label, by_label, by_label_all, by_attr)
+        if not fields:
+            continue
+        src_labels = action.get("labels") or []
+        for row in rows:
+            if any(row["values"].get(f["attribute"], {}).get("value") not in (None, "")
+                   for f in fields if f):
+                continue
+            parts = [_num(_row_label_value(row, sl, by_label, by_label_all, by_attr))
+                     for sl in src_labels]
+            if not parts or any(p is None for p in parts):
+                continue
+            total = sum(parts)
+            total = int(total) if total == int(total) else total
+            set_cell(row["values"], fields[0], total, "org_rule",
+                     f"autofill sum: {label} = {' + '.join(src_labels)}", inferred=True)
+            applied.append(f"sum {label} = {total}")
     return applied
 
 
